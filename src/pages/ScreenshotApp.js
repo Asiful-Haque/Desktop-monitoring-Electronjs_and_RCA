@@ -9,17 +9,19 @@ const ScreenshotApp = () => {
 
   const [isCapturing, setIsCapturing] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [idleSecondsThisCycle, setIdleSecondsThisCycle] = useState(0);
-  const [secondsSampled, setSecondsSampled] = useState(0);
   const [taskData, setTaskData] = useState([]);
   const [selected, setSelected] = useState("");
+
+  // Use ref for immediate mutable idle tracking
+  const idleSecondsThisCycleRef = useRef(0);
+  const secondsSampledRef = useRef(0);
 
   const handleChange = (e) => {
     setSelected(e.target.value);
     console.log("Selected task:", e.target.value);
   };
 
-  const fetchData = async () => {    //Data fetching function to get tasks from the backend
+  const fetchData = async () => {
     try {
       const response = await fetch("http://localhost:5000/api/tasks");
       if (!response.ok) throw new Error("Network response was not ok");
@@ -31,64 +33,64 @@ const ScreenshotApp = () => {
     }
   };
 
-  useEffect(() => {   // Initial data fetch and interval setup
+  useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  const startTimer = () => { // 1
+  const startTimer = () => {
     timerRef.current = setInterval(() => {
       setElapsedSeconds((prev) => prev + 1);
     }, 1000);
   };
 
-  const stopTimer = () => { // 2
+  const stopTimer = () => {
     clearInterval(timerRef.current);
     setElapsedSeconds(0);
   };
 
-  const startSampling = () => { // 1
+  const startSampling = () => {
     samplingRef.current = setInterval(async () => {
       const idle = await window.electronAPI.getIdleTime();
-      if (idle >= 1) setIdleSecondsThisCycle((prev) => prev + 1);
-      setSecondsSampled((prev) => prev + 1);
+      if (idle >= 1) idleSecondsThisCycleRef.current++;
+      secondsSampledRef.current++;
     }, 1000);
   };
 
-  const stopSampling = () => { // 2
+  const stopSampling = () => {
     clearInterval(samplingRef.current);
-    setIdleSecondsThisCycle(0);
-    setSecondsSampled(0);
+    idleSecondsThisCycleRef.current = 0;
+    secondsSampledRef.current = 0;
   };
 
-  const startScreenshotCycle = () => { // 1
+  const startScreenshotCycle = () => {
     captureIntervalRef.current = setInterval(() => {
       evaluateAndCapture();
     }, 30000);
   };
 
-  const stopScreenshotCycle = () => { // 2
+  const stopScreenshotCycle = () => {
     clearInterval(captureIntervalRef.current);
   };
 
-  const handleStart = () => { // 1
+  const handleStart = () => {
     setIsCapturing(true);
     startTimer();
     startSampling();
     startScreenshotCycle();
   };
 
-  const handleStop = () => { // 2
+  const handleStop = () => {
     setIsCapturing(false);
     stopTimer();
     stopSampling();
     stopScreenshotCycle();
   };
 
-  const evaluateAndCapture = async () => { // Function to evaluate idle time and take a screenshot if conditions are met
+  const evaluateAndCapture = async () => {
     const timestamp = new Date().toLocaleTimeString();
-    const idle = idleSecondsThisCycle;
+    const idle = idleSecondsThisCycleRef.current;
     const active = 30 - idle;
     console.log(`[${timestamp}] 🕒 Idle: ${idle}s, Active: ${active}s`);
 
@@ -96,7 +98,7 @@ const ScreenshotApp = () => {
       console.log("🚫 Skipping screenshot due to user inactivity");
     } else {
       const ssResult = await takeScreenshot();
-      if (ssResult.success) {
+      if (ssResult?.success) {
         try {
           const dataToSend = {
             screenshotPath: ssResult.path,
@@ -106,15 +108,11 @@ const ScreenshotApp = () => {
             activeSeconds: active,
           };
           console.log("📤 Data to send:", dataToSend);
-          // Send POST request with collected data
-          const response = await fetch(
-            "http://localhost:5000/api/screenshot-data",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(dataToSend),
-            }
-          );
+          const response = await fetch("http://localhost:5000/api/screenshot-data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(dataToSend),
+          });
 
           if (!response.ok) {
             console.warn("⚠️ Failed to post screenshot data");
@@ -127,14 +125,13 @@ const ScreenshotApp = () => {
       }
     }
 
-    setIdleSecondsThisCycle(0);
-    setSecondsSampled(0);
+    idleSecondsThisCycleRef.current = 0;
+    secondsSampledRef.current = 0;
   };
 
-  const takeScreenshot = async () => { // Function to take a screenshot using the desktop media source
+  const takeScreenshot = async () => {
     try {
       const sources = await window.electronAPI.getSources();
-      // console.log('🖼️ Sources:', sources);
       if (!sources.length) return console.warn("⚠️ No sources found.");
 
       const selectedSource = sources[0];
@@ -166,9 +163,7 @@ const ScreenshotApp = () => {
 
       const result = await window.electronAPI.saveImage(uint8Array);
       if (result.success) {
-        console.log(
-          `✅ Screenshot saved under Task: ${selected}, at: ${result.path}`
-        );
+        console.log(`✅ Screenshot saved under Task: ${selected}, at: ${result.path}`);
         return { success: true, path: result.path };
       } else {
         console.warn("⚠️ Screenshot was not saved.");
@@ -177,8 +172,6 @@ const ScreenshotApp = () => {
       console.error("❌ Error during screenshot process:", err);
     }
   };
-
-
 
   return (
     <div className="content">

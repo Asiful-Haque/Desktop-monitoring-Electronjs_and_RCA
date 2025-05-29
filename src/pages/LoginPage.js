@@ -17,16 +17,29 @@ const LoginPage = () => {
   };
 
   const handleOAuthLogin = async () => {
-    const result = await window.electronAPI.startOAuth();
-    if (result.success) {
-      alert("✅ OAuth Login Success!");
-      window.location.href = "index.html";
-      console.log("Token:", result.token);
-    } else {
-      alert("❌ OAuth Login Failed");
-      console.error(result.error);
+  try {
+    if (!window.electronAPI || typeof window.electronAPI.startOAuth !== "function") {
+      console.error("❌ electronAPI or startOAuth is not available");
+      alert("Electron API is not available. Make sure you're running in Electron.");
+      return;
     }
-  };
+
+    const result = await window.electronAPI.startOAuth();
+
+    if (result && result.success) {
+      alert("✅ OAuth Login Success!");
+      console.log("Token:", result.token);
+      window.location.href = "index.html";
+    } else {
+      console.error("OAuth login failed:", result?.error || "Unknown error");
+      alert("❌ OAuth Login Failed");
+    }
+  } catch (err) {
+    console.error("❌ Exception during OAuth:", err);
+    alert("❌ OAuth Login Exception: " + err.message);
+  }
+};
+
 
   return (
     <div className="main-container">

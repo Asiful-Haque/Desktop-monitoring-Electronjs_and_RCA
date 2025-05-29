@@ -1,3 +1,4 @@
+require('dotenv').config();
 const {
   app,
   BrowserWindow,
@@ -31,6 +32,7 @@ function createWindow() {
     height: 700,
     webPreferences: {
       contextIsolation: true,
+      nodeIntegration: false,
       preload: path.join(__dirname, "preload.js"),
     },
   });
@@ -88,6 +90,9 @@ ipcMain.handle("save-image", async (_event, buffer) => {
 
 // 🔐 Start Google OAuth
 // 🔐 Start Google OAuth (fixed)
+// console.log("🔑 Client ID:", process.env.GOOGLE_CLIENT_ID);
+// console.log("🔑 Client Secret:", process.env.GOOGLE_CLIENT_SECRET);
+
 ipcMain.handle("start-oauth", async () => {
   return new Promise((resolve) => {
     const authWindow = new BrowserWindow({
