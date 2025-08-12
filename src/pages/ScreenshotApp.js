@@ -15,6 +15,7 @@ const ScreenshotApp = () => {
   // Use ref for immediate mutable idle tracking
   const idleSecondsThisCycleRef = useRef(0);
   const secondsSampledRef = useRef(0);
+  const streamRef = useRef(null);
 
   const handleChange = (e) => {
     setSelected(e.target.value);
@@ -23,20 +24,81 @@ const ScreenshotApp = () => {
 
   const fetchData = async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/tasks");
+      const response = await fetch("http://localhost:5000/api/tasks/28");
       if (!response.ok) throw new Error("Network response was not ok");
       const data = await response.json();
       console.log("Fetched data:", data);
-      setTaskData(data);
+      setTaskData(data.tasks);
     } catch (error) {
       console.error("Fetch error:", error);
     }
   };
 
+  // Simple toast helper
+  const showToast = (message) => {
+    const toast = document.createElement("div");
+    toast.className = "custom-toast";
+    toast.innerText = message;
+    document.body.appendChild(toast);
+
+    // trigger CSS transition
+    requestAnimationFrame(() => toast.classList.add("show"));
+
+    // hide + remove
+    setTimeout(() => {
+      toast.classList.remove("show");
+      setTimeout(() => {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      }, 300);
+    }, 2500);
+  };
+
+  // Setup video stream on mount
   useEffect(() => {
     fetchData();
+
+    const setupVideoStream = async () => {
+      try {
+        const sources = await window.electronAPI.getSources();
+        if (!sources.length) return console.warn("⚠️ No sources found.");
+
+        const selectedSource = sources[0];
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            mandatory: {
+              chromeMediaSource: "desktop",
+              chromeMediaSourceId: selectedSource.id,
+            },
+          },
+        });
+
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+      } catch (err) {
+        console.error("❌ Error setting up video stream:", err);
+      }
+    };
+
+    setupVideoStream();
+
     const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
+
+    // Cleanup on unmount
+    return () => {
+      clearInterval(interval);
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (samplingRef.current) clearInterval(samplingRef.current);
+      if (captureIntervalRef.current) clearInterval(captureIntervalRef.current);
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
   }, []);
 
   const startTimer = () => {
@@ -75,6 +137,12 @@ const ScreenshotApp = () => {
   };
 
   const handleStart = () => {
+    // Block if no task selected and show toast
+    if (!selected) {
+      showToast("⚠ Please select a task before starting!");
+      return;
+    }
+
     setIsCapturing(true);
     startTimer();
     startSampling();
@@ -193,8 +261,8 @@ const ScreenshotApp = () => {
             Select Task
           </option>
           {taskData.map((task, index) => (
-            <option key={index} value={task.title}>
-              {task.title}
+            <option key={index} value={task.task_name}>
+              {task.task_name}
             </option>
           ))}
         </select>
