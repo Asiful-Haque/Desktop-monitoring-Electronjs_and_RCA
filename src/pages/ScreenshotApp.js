@@ -10,25 +10,35 @@ const ScreenshotApp = () => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [taskData, setTaskData] = useState([]);
-  const [selected, setSelected] = useState("");
+  const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [selectedTaskName, setSelectedTaskName] = useState("");
 
   // Use ref for immediate mutable idle tracking
   const idleSecondsThisCycleRef = useRef(0);
   const secondsSampledRef = useRef(0);
   const streamRef = useRef(null);
 
+  const getTaskId = (t) => t?.id ?? t?.task_id ?? t?._id;
+
   const handleChange = (e) => {
-    setSelected(e.target.value);
-    console.log("Selected task:", e.target.value);
+    const newId = e.target.value;
+    setSelectedTaskId(newId); // ✅ store id all the time
+
+    // also keep the name for display/logging
+    const task = taskData.find((t) => String(getTaskId(t)) === String(newId));
+    setSelectedTaskName(task?.task_name ?? "");
+    console.log("Selected task:", { id: newId, name: task?.task_name });
   };
+
+  const user_id = localStorage.getItem("user_id");
 
   const fetchData = async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/tasks/28");
+      // console.log(`going to ${process.env.REACT_APP_API_BASE}/api/tasks/${user_id}`);
+      const response = await fetch(`${process.env.REACT_APP_API_BASE}/api/tasks/${user_id}`);
       if (!response.ok) throw new Error("Network response was not ok");
       const data = await response.json();
-      console.log("Fetched data:", data);
-      setTaskData(data.tasks);
+      setTaskData(Array.isArray(data?.tasks) ? data.tasks : []);
     } catch (error) {
       console.error("Fetch error:", error);
     }
@@ -40,11 +50,7 @@ const ScreenshotApp = () => {
     toast.className = "custom-toast";
     toast.innerText = message;
     document.body.appendChild(toast);
-
-    // trigger CSS transition
     requestAnimationFrame(() => toast.classList.add("show"));
-
-    // hide + remove
     setTimeout(() => {
       toast.classList.remove("show");
       setTimeout(() => {
@@ -94,7 +100,6 @@ const ScreenshotApp = () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (samplingRef.current) clearInterval(samplingRef.current);
       if (captureIntervalRef.current) clearInterval(captureIntervalRef.current);
-
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
@@ -137,12 +142,11 @@ const ScreenshotApp = () => {
   };
 
   const handleStart = () => {
-    // Block if no task selected and show toast
-    if (!selected) {
+    // ✅ Block if no task selected by id
+    if (!selectedTaskId) {
       showToast("⚠ Please select a task before starting!");
       return;
     }
-
     setIsCapturing(true);
     startTimer();
     startSampling();
@@ -170,13 +174,14 @@ const ScreenshotApp = () => {
         try {
           const dataToSend = {
             screenshotPath: ssResult.path,
-            task: selected,
-            timestamp: timestamp,
+            task_id: selectedTaskId,
+            timestamp,
             idleSeconds: idle,
             activeSeconds: active,
           };
           console.log("📤 Data to send:", dataToSend);
-          const response = await fetch("http://localhost:5000/api/screenshot-data", {
+
+          const response = await fetch(`${process.env.REACT_APP_API_BASE}/api/screenshot-data`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(dataToSend),
@@ -223,15 +228,13 @@ const ScreenshotApp = () => {
       const ctx = canvas.getContext("2d");
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const blob = await new Promise((resolve) =>
-        canvas.toBlob(resolve, "image/png")
-      );
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
       const arrayBuffer = await blob.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
 
       const result = await window.electronAPI.saveImage(uint8Array);
       if (result.success) {
-        console.log(`✅ Screenshot saved under Task: ${selected}, at: ${result.path}`);
+        console.log(`✅ Screenshot saved under Task: ${selectedTaskName} [${selectedTaskId}], at: ${result.path}`);
         return { success: true, path: result.path };
       } else {
         console.warn("⚠️ Screenshot was not saved.");
@@ -253,18 +256,21 @@ const ScreenshotApp = () => {
       <div className="select-container">
         <label>Choose Your Task:</label>
         <select
-          value={selected}
+          value={selectedTaskId}          // ✅ value is the id
           onChange={handleChange}
           className="scrollable-select"
         >
           <option value="" disabled>
             Select Task
           </option>
-          {taskData.map((task, index) => (
-            <option key={index} value={task.task_name}>
-              {task.task_name}
-            </option>
-          ))}
+          {taskData.map((task, index) => {
+            const tid = getTaskId(task); // ✅ normalize id
+            return (
+              <option key={tid ?? index} value={tid}>
+                {task.task_name}
+              </option>
+            );
+          })}
         </select>
       </div>
 

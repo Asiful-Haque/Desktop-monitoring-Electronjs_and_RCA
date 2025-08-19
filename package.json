@@ -1,15 +1,56 @@
 {
   "name": "screenelectron",
   "version": "1.0.0",
+  "description": "Screen capture & upload desktop app",
+  "author": "TwinStack Solutions",
+  "homepage": "./",
   "main": "main.js",
+  "private": true,
   "scripts": {
     "start": "react-scripts start",
     "electron": "electron .",
-    "dev": "concurrently \"npm start\" \"wait-on http://localhost:3000 && npm run electron\"",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "cross-env BROWSER=none concurrently \"npm run start\" \"wait-on http://localhost:3000 && npm run electron\"",
+    "build": "react-scripts build",
+    "dist:win": "npm run build && electron-builder -w",
+    "dist:mac": "npm run build && electron-builder -m",
+    "dist:linux": "npm run build && electron-builder -l",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "build": {
+    "extends": null,
+    "appId": "com.yourcompany.screenelectron",
+    "productName": "ScreenElectron",
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.js",
+      "build/**",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "extraMetadata": {
+      "main": "main.js"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    }
   },
   "dependencies": {
-    "electron": "^36.3.1",
     "form-data": "^4.0.2",
     "node-fetch": "^2.7.0",
     "react": "^18.3.1",
@@ -19,6 +60,9 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
+    "cross-env": "^10.0.0",
+    "electron": "^36.3.1",
+    "electron-builder": "^26.0.12",
     "nodemon": "^3.1.10",
     "react-scripts": "^5.0.1",
     "wait-on": "^7.0.1"
