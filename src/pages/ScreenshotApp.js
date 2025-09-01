@@ -1,6 +1,28 @@
 import React, { useEffect, useRef, useState } from "react";
 import "../styles/screenshotapp.css";
 
+/* ---------- Minimal Confirm Dialog (no libs) ---------- */
+const ConfirmDialog = ({ open, title, subtitle, onCancel, onConfirm }) => {
+  if (!open) return null;
+  return (
+    <div className="confirm-backdrop" role="dialog" aria-modal="true">
+      <div className="confirm-card">
+        <h3 className="confirm-title">{title}</h3>
+        {subtitle ? <p className="confirm-subtitle">{subtitle}</p> : null}
+        <div className="confirm-actions">
+          <button className="btn ghost" onClick={onCancel} autoFocus>
+            Cancel
+          </button>
+          <button className="btn danger" onClick={onConfirm}>
+            Quit
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+/* ------------------------------------------------------ */
+
 const ScreenshotApp = () => {
   const videoRef = useRef(null);
   const timerRef = useRef(null);
@@ -13,6 +35,9 @@ const ScreenshotApp = () => {
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [selectedTaskName, setSelectedTaskName] = useState("");
 
+  // NEW: confirmation state
+  const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+
   // Use ref for immediate mutable idle tracking
   const idleSecondsThisCycleRef = useRef(0);
   const secondsSampledRef = useRef(0);
@@ -22,19 +47,15 @@ const ScreenshotApp = () => {
 
   const handleChange = (e) => {
     const newId = e.target.value;
-    setSelectedTaskId(newId); // ✅ store id all the time
-
-    // also keep the name for display/logging
+    setSelectedTaskId(newId);
     const task = taskData.find((t) => String(getTaskId(t)) === String(newId));
     setSelectedTaskName(task?.task_name ?? "");
-    console.log("Selected task:", { id: newId, name: task?.task_name });
   };
 
   const user_id = localStorage.getItem("user_id");
 
   const fetchData = async () => {
     try {
-      // console.log(`going to ${process.env.REACT_APP_API_BASE}/api/tasks/${user_id}`);
       const response = await fetch(`${process.env.REACT_APP_API_BASE}/api/tasks/${user_id}`);
       if (!response.ok) throw new Error("Network response was not ok");
       const data = await response.json();
@@ -44,7 +65,7 @@ const ScreenshotApp = () => {
     }
   };
 
-  // Simple toast helper
+  // Simple toast helper (unchanged)
   const showToast = (message) => {
     const toast = document.createElement("div");
     toast.className = "custom-toast";
@@ -106,6 +127,18 @@ const ScreenshotApp = () => {
     };
   }, []);
 
+  // Warn if user tries to close/refresh while capturing
+  useEffect(() => {
+    const onBeforeUnload = (e) => {
+      if (isCapturing) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isCapturing]);
+
   const startTimer = () => {
     timerRef.current = setInterval(() => {
       setElapsedSeconds((prev) => prev + 1);
@@ -131,10 +164,11 @@ const ScreenshotApp = () => {
     secondsSampledRef.current = 0;
   };
 
+  // Starting the cycle
   const startScreenshotCycle = () => {
     captureIntervalRef.current = setInterval(() => {
       evaluateAndCapture();
-    }, 30000);
+    }, 10 * 60 * 1000);
   };
 
   const stopScreenshotCycle = () => {
@@ -142,7 +176,6 @@ const ScreenshotApp = () => {
   };
 
   const handleStart = () => {
-    // ✅ Block if no task selected by id
     if (!selectedTaskId) {
       showToast("⚠ Please select a task before starting!");
       return;
@@ -160,13 +193,37 @@ const ScreenshotApp = () => {
     stopScreenshotCycle();
   };
 
+  // open custom confirmation
+  const handleQuit = () => {
+    setShowQuitConfirm(true);
+  };
+
+  // perform quit after confirm
+  const confirmQuit = () => {
+    if (isCapturing) handleStop();
+    if (streamRef.current) {
+      try {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      } catch (e) {
+        console.warn("Stream stop error:", e);
+      }
+      streamRef.current = null;
+    }
+    setShowQuitConfirm(false);
+    window.history.back();
+  };
+
+  const cancelQuit = () => setShowQuitConfirm(false);
+
   const evaluateAndCapture = async () => {
     const timestamp = new Date().toLocaleTimeString();
+
     const idle = idleSecondsThisCycleRef.current;
-    const active = 30 - idle;
+    const active = 600 - idle;
+
     console.log(`[${timestamp}] 🕒 Idle: ${idle}s, Active: ${active}s`);
 
-    if (idle > 20) {
+    if (active < 300) {
       console.log("🚫 Skipping screenshot due to user inactivity");
     } else {
       const ssResult = await takeScreenshot();
@@ -179,7 +236,6 @@ const ScreenshotApp = () => {
             idleSeconds: idle,
             activeSeconds: active,
           };
-          console.log("📤 Data to send:", dataToSend);
 
           const response = await fetch(`${process.env.REACT_APP_API_BASE}/api/screenshot-data`, {
             method: "POST",
@@ -187,11 +243,8 @@ const ScreenshotApp = () => {
             body: JSON.stringify(dataToSend),
           });
 
-          if (!response.ok) {
-            console.warn("⚠️ Failed to post screenshot data");
-          } else {
-            console.log("✅ Screenshot data posted successfully");
-          }
+          if (!response.ok) console.warn("⚠️ Failed to post screenshot data");
+          else console.log("✅ Screenshot data posted successfully");
         } catch (err) {
           console.error("❌ Error in evaluateAndCapture POST:", err);
         }
@@ -246,17 +299,27 @@ const ScreenshotApp = () => {
 
   return (
     <div className="content">
-      <button id="backBtn" onClick={() => window.history.back()}>
-        {"< Back"}
+      {/* Quit + Refresh */}
+      <button id="backBtn" onClick={handleQuit}>
+        {"< Quit"}
       </button>
       <button id="refreshBtn" onClick={() => window.location.reload()}>
         🔄 Refresh
       </button>
 
+      {/* Confirm dialog */}
+      <ConfirmDialog
+        open={showQuitConfirm}
+        title="Quit session?"
+        subtitle={isCapturing ? "Capture is currently running. We’ll stop it and discard the current cycle." : ""}
+        onCancel={cancelQuit}
+        onConfirm={confirmQuit}
+      />
+
       <div className="select-container">
         <label>Choose Your Task:</label>
         <select
-          value={selectedTaskId}          // ✅ value is the id
+          value={selectedTaskId}
           onChange={handleChange}
           className="scrollable-select"
         >
@@ -264,7 +327,7 @@ const ScreenshotApp = () => {
             Select Task
           </option>
           {taskData.map((task, index) => {
-            const tid = getTaskId(task); // ✅ normalize id
+            const tid = getTaskId(task);
             return (
               <option key={tid ?? index} value={tid}>
                 {task.task_name}
@@ -283,7 +346,7 @@ const ScreenshotApp = () => {
           onClick={handleStart}
           disabled={isCapturing}
         >
-          {isCapturing ? "Capturing..." : "Take Screenshot"}
+          {isCapturing ? "Started..." : "Start"}
         </button>
         <button
           id="stopBtn"

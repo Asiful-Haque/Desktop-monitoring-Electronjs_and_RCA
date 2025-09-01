@@ -145,3 +145,75 @@ username, password {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+/* --- Confirm dialog --- */
+.confirm-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 13, 24, 0.55);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  z-index: 9998;
+  animation: fadeIn 120ms ease-out;
+}
+
+.confirm-card{
+  width: min(92vw, 420px);
+  background: #101626;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgba(0,0,0,.45);
+  padding: 18px;
+  color: #e7ecff;
+}
+
+.confirm-title{
+  margin: 4px 0 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.confirm-subtitle{
+  margin: 0 0 14px;
+  color: #b7c0d8;
+  line-height: 1.35;
+  font-size: .95rem;
+}
+
+.confirm-actions{
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn{
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn.ghost{
+  background: rgba(255,255,255,0.08);
+  color: #e7ecff;
+}
+
+.btn.ghost:hover{
+  background: rgba(255,255,255,0.12);
+}
+
+.btn.danger{
+  background: #dc2626;     /* red */
+  color: white;
+  box-shadow: 0 6px 18px rgba(220,38,38,0.35);
+}
+
+.btn.danger:hover{
+  filter: brightness(1.05);
+}
+
+@keyframes fadeIn{
+  from{ opacity: 0; }
+  to  { opacity: 1; }
+}

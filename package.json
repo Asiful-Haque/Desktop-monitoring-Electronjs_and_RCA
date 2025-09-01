@@ -18,8 +18,8 @@
   },
   "build": {
     "extends": null,
-    "appId": "com.yourcompany.screenelectron",
-    "productName": "ScreenElectron",
+    "appId": "com.twinforce.screenelectron",
+    "productName": "TaskPro",
     "asar": true,
     "files": [
       "main.js",
@@ -36,7 +36,8 @@
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "assets/icons/iconwin.ico"
     },
     "mac": {
       "target": [

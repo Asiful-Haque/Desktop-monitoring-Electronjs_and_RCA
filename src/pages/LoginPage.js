@@ -1,125 +1,184 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/login.css";
+
+/* ---------------- Toast primitives (no library) ---------------- */
+const Toast = ({ id, title, message, type = "error", onClose }) => {
+  return (
+    <div className={`toast ${type}`}>
+      <div className="toast-bar" />
+      <div className="toast-content">
+        <div className="toast-title">{title}</div>
+        {message && <div className="toast-message">{message}</div>}
+      </div>
+      <button className="toast-close" onClick={() => onClose(id)} aria-label="Close">×</button>
+    </div>
+  );
+};
+
+const ToastHost = ({ toasts, removeToast }) => {
+  return (
+    <div className="toast-host" aria-live="polite" aria-atomic="true">
+      {toasts.map((t) => (
+        <Toast key={t.id} {...t} onClose={removeToast} />
+      ))}
+    </div>
+  );
+};
+/* ---------------------------------------------------------------- */
 
 const LoginPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // simple toast manager
+  const [toasts, setToasts] = useState([]);
+  const pushToast = (t) => {
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const toast = { id, ...t };
+    setToasts((prev) => [...prev, toast]);
+    // auto-dismiss after 5s
+    setTimeout(() => removeToast(id), 5000);
+  };
+  const removeToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id));
+
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
-    console.log(email, password);
     const payload = { email, password };
+
     try {
       const res = await fetch("https://taskpro.twinstack.net/api/auth/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        // ✅ allow httpOnly cookie from the API
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify(payload),
       });
 
       const contentType = res.headers.get("content-type") || "";
-      const body = contentType.includes("application/json")
+      const raw = contentType.includes("application/json")
         ? await res.json().catch(() => null)
         : await res.text().catch(() => "");
 
       if (!res.ok) {
-        console.error("Login failed:", res.status, res.statusText, body);
-        alert(`❌ Login failed: ${body?.error || body || `${res.status} ${res.statusText}`}`);
-        return;
+        // extract safe message
+        const msg =
+          (raw && (raw.error || raw.message)) ||
+          (typeof raw === "string" && raw.trim()) ||
+          `${res.status} ${res.statusText}`;
+
+        // show toast (non-blocking) and RE-ENABLE inputs immediately
+        pushToast({
+          type: "error",
+          title: "Login failed",
+          message: msg,
+        });
+        setLoading(false); // <- immediate so inputs become editable again
+        return; // safe to return; inputs are already re-enabled
       }
 
-      // ✅ Treat 2xx as success since server sets an httpOnly cookie
-      const data = typeof body === "string" ? JSON.parse(body) : body;
+      // success
+      const data = typeof raw === "string" && raw ? JSON.parse(raw) : raw;
       if (data?.name) {
         localStorage.setItem("user_id", data.id);
         localStorage.setItem("user_name", data.name);
       }
-      console.log("Data is from web app", data);
-
+      pushToast({ type: "success", title: "Welcome back!", message: "Login successful." });
       navigate("/screenshot");
     } catch (err) {
-      console.error("Exception during login:", err);
-      alert(`❌ Login error: ${err.message}`);
+      pushToast({
+        type: "error",
+        title: "Network error",
+        message: err?.message || "Something went wrong.",
+      });
     } finally {
+      // ensure inputs re-enable in any path where we didn't early-return
       setLoading(false);
     }
   };
 
-  const handleOAuthLogin = async () => {
-    try {
-      if (!window.electronAPI || typeof window.electronAPI.startOAuth !== "function") {
-        console.error("❌ electronAPI or startOAuth is not available");
-        alert("Electron API is not available. Make sure you're running in Electron.");
-        return;
-      }
-
-      const result = await window.electronAPI.startOAuth();
-
-      if (result && result.success) {
-        alert("✅ OAuth Login Success!");
-        console.log("Token:", result.token);
-        window.location.href = "index.html";
-      } else {
-        console.error("OAuth login failed:", result?.error || "Unknown error");
-        alert("❌ OAuth Login Failed");
-      }
-    } catch (err) {
-      console.error("❌ Exception during OAuth:", err);
-      alert("❌ OAuth Login Exception: " + err.message);
-    }
-  };
-
   return (
-    <div className="main-container">
-      <div className="login-container">
-        <h1>Login to Start</h1>
-        <form onSubmit={handleLogin}>
-          <label htmlFor="email">Email:</label>
-          <input
-            type="text"
-            id="email"
-            name="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={loading}
-          />
-          <br />
-          <br />
+    <main className="auth-root">
+      <div className="bg-ornament" aria-hidden="true" />
+      <ToastHost toasts={toasts} removeToast={removeToast} />
 
-          <label htmlFor="password">Password:</label>
-          <input
-            type="password"
-            id="password"
-            name="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={loading}
-          />
-          <br />
+      <section className="auth-card" role="region" aria-label="Login panel">
+        <header className="auth-header">
+          <div className="brand">
+            <div className="brand-icon" aria-hidden="true">✓</div>
+            <div className="brand-text">
+              <h1 className="brand-title">TaskPro</h1>
+              <p className="brand-subtitle">Welcome back. Let’s get productive.</p>
+            </div>
+          </div>
+        </header>
 
-          <button type="submit" className="login-button" disabled={loading}>
-            {loading ? "Logging in..." : "Login"}
-          </button>
-          {/* <button
-            type="button"
-            className="login-button"
-            onClick={handleOAuthLogin}
+        <form className="auth-form" onSubmit={handleLogin} noValidate>
+          <div className="field">
+            <label htmlFor="email" className="label">Email</label>
+            <div className="input-wrap">
+              <span className="input-icon" aria-hidden="true">✉️</span>
+              <input
+                type="email"
+                id="email"
+                name="email"
+                placeholder="you@company.com"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
+                autoComplete="email"
+                className="input"
+              />
+            </div>
+          </div>
+
+          <div className="field">
+            <label htmlFor="password" className="label">Password</label>
+            <div className="input-wrap">
+              <span className="input-icon" aria-hidden="true">🔒</span>
+              <input
+                type="password"
+                id="password"
+                name="password"
+                placeholder="••••••••"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
+                autoComplete="current-password"
+                className="input"
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            className={`btn-primary ${loading ? "is-loading" : ""}`}
             disabled={loading}
+            aria-busy={loading ? "true" : "false"}
           >
-            Login with Google
-          </button> */}
+            {loading ? (
+              <>
+                <span className="spinner" aria-hidden="true" />
+                Logging in…
+              </>
+            ) : (
+              "Login"
+            )}
+          </button>
         </form>
-      </div>
-    </div>
+
+        <footer className="auth-footer">
+          <p className="muted">
+            If you don't have an account, please contact your administrator.
+          </p>
+        </footer>
+      </section>
+    </main>
   );
 };
 
