@@ -45,60 +45,76 @@ const LoginPage = () => {
 
   const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    const payload = { email, password };
+const handleLogin = async (e) => {
+  e.preventDefault();
+  setLoading(true);
+  const payload = { email, password };
 
-    try {
-      const res = await fetch("https://taskpro.twinstack.net/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
+  try {
+    const res = await fetch(`${process.env.REACT_APP_API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload),
+    });
 
-      const contentType = res.headers.get("content-type") || "";
-      const raw = contentType.includes("application/json")
-        ? await res.json().catch(() => null)
-        : await res.text().catch(() => "");
+    const contentType = res.headers.get("content-type") || "";
+    const raw = contentType.includes("application/json")
+      ? await res.json().catch(() => null)
+      : await res.text().catch(() => "");
 
-      if (!res.ok) {
-        // extract safe message
-        const msg =
-          (raw && (raw.error || raw.message)) ||
-          (typeof raw === "string" && raw.trim()) ||
-          `${res.status} ${res.statusText}`;
+    if (!res.ok) {
+      const msg =
+        (raw && (raw.error || raw.message)) ||
+        (typeof raw === "string" && raw.trim()) ||
+        `${res.status} ${res.statusText}`;
 
-        // show toast (non-blocking) and RE-ENABLE inputs immediately
-        pushToast({
-          type: "error",
-          title: "Login failed",
-          message: msg,
-        });
-        setLoading(false); // <- immediate so inputs become editable again
-        return; // safe to return; inputs are already re-enabled
-      }
-
-      // success
-      const data = typeof raw === "string" && raw ? JSON.parse(raw) : raw;
-      if (data?.name) {
-        localStorage.setItem("user_id", data.id);
-        localStorage.setItem("user_name", data.name);
-      }
-      pushToast({ type: "success", title: "Welcome back!", message: "Login successful." });
-      navigate("/screenshot");
-    } catch (err) {
       pushToast({
         type: "error",
-        title: "Network error",
-        message: err?.message || "Something went wrong.",
+        title: "Login failed",
+        message: msg,
       });
-    } finally {
-      // ensure inputs re-enable in any path where we didn't early-return
       setLoading(false);
+      return;
     }
-  };
+
+    const data = typeof raw === "string" && raw ? JSON.parse(raw) : raw;
+    if (data?.name) {
+      localStorage.setItem("user_id", data.id);
+      localStorage.setItem("user_name", data.name);
+    }
+    pushToast({ type: "success", title: "Welcome back!", message: "Login successful." });
+
+    // Corrected: Directly use the method
+    console.log("Calling getTokenCookie");
+
+    // window.electronAPI.getTokenCookie() //if you want to check cookie is present or not.......
+    //   .then((token) => {
+    //     if (token) {
+    //       console.log("Token retrieved:", token);  // This will log the token in the main process
+    //     } else {
+    //       console.log("Token not found");
+    //     }
+    //   })
+    //   .catch((err) => {
+    //     console.error("Error retrieving token:", err);
+    //   });
+
+    navigate("/screenshot");
+  } catch (err) {
+    pushToast({
+      type: "error",
+      title: "Network error",
+      message: err?.message || "Something went wrong.",
+    });
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+
+  
 
   return (
     <main className="auth-root">

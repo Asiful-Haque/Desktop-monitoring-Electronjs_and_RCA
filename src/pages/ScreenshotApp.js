@@ -34,8 +34,8 @@ const ScreenshotApp = () => {
   const [taskData, setTaskData] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [selectedTaskName, setSelectedTaskName] = useState("");
+  const [token, setToken] = useState(null); // Store the token
 
-  // NEW: confirmation state
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
 
   // Use ref for immediate mutable idle tracking
@@ -54,18 +54,51 @@ const ScreenshotApp = () => {
 
   const user_id = localStorage.getItem("user_id");
 
-  const fetchData = async () => {
+  // Fetch token once the component mounts
+  useEffect(() => {
+    window.electronAPI
+      .getTokenCookie()
+      .then((fetchedToken) => {
+        if (fetchedToken) {
+          setToken(fetchedToken); // Store the token in the state
+          fetchData(fetchedToken); // Use the token in the API requests
+        } else {
+          console.log("Token not found");
+        }
+      })
+      .catch((err) => {
+        console.error("Error retrieving token:", err);
+      });
+    // console.log("Token is ", token);
+  }, []);
+
+  const fetchData = async (token) => {
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_BASE}/api/tasks/${user_id}`);
+      const response = await fetch(
+        `${process.env.REACT_APP_API_BASE}/api/tasks/${user_id}`,
+        {
+          method: "GET",
+          // headers: {
+          //   Authorization: `Bearer ${token}`, // Pass the token here
+          // },
+          credentials: 'include', //cx we are calling another 5500's api 
+        }
+      );
+      if (response.status === 401) {
+        console.log("Token expired or invalid, please log in again");
+        // Trigger re-login or token refresh logic
+        return;
+      }
+
       if (!response.ok) throw new Error("Network response was not ok");
       const data = await response.json();
       setTaskData(Array.isArray(data?.tasks) ? data.tasks : []);
+      console.log("task data:", data);
     } catch (error) {
       console.error("Fetch error:", error);
     }
   };
 
-  // Simple toast helper (unchanged)
   const showToast = (message) => {
     const toast = document.createElement("div");
     toast.className = "custom-toast";
@@ -80,9 +113,8 @@ const ScreenshotApp = () => {
     }, 2500);
   };
 
-  // Setup video stream on mount
   useEffect(() => {
-    fetchData();
+    fetchData(token);
 
     const setupVideoStream = async () => {
       try {
@@ -113,9 +145,8 @@ const ScreenshotApp = () => {
 
     setupVideoStream();
 
-    const interval = setInterval(fetchData, 30000);
+    const interval = setInterval(() => fetchData(token), 30000);
 
-    // Cleanup on unmount
     return () => {
       clearInterval(interval);
       if (timerRef.current) clearInterval(timerRef.current);
@@ -125,19 +156,7 @@ const ScreenshotApp = () => {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
-  }, []);
-
-  // Warn if user tries to close/refresh while capturing
-  useEffect(() => {
-    const onBeforeUnload = (e) => {
-      if (isCapturing) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [isCapturing]);
+  }, [token]);
 
   const startTimer = () => {
     timerRef.current = setInterval(() => {
@@ -164,11 +183,10 @@ const ScreenshotApp = () => {
     secondsSampledRef.current = 0;
   };
 
-  // Starting the cycle
   const startScreenshotCycle = () => {
     captureIntervalRef.current = setInterval(() => {
       evaluateAndCapture();
-    }, 10 * 60 * 1000);
+    }, 1 * 30 * 1000);
   };
 
   const stopScreenshotCycle = () => {
@@ -193,12 +211,10 @@ const ScreenshotApp = () => {
     stopScreenshotCycle();
   };
 
-  // open custom confirmation
   const handleQuit = () => {
     setShowQuitConfirm(true);
   };
 
-  // perform quit after confirm
   const confirmQuit = () => {
     if (isCapturing) handleStop();
     if (streamRef.current) {
@@ -219,11 +235,11 @@ const ScreenshotApp = () => {
     const timestamp = new Date().toLocaleTimeString();
 
     const idle = idleSecondsThisCycleRef.current;
-    const active = 600 - idle;
+    const active = 30 - idle;
 
     console.log(`[${timestamp}] 🕒 Idle: ${idle}s, Active: ${active}s`);
 
-    if (active < 300) {
+    if (active < 15) {
       console.log("🚫 Skipping screenshot due to user inactivity");
     } else {
       const ssResult = await takeScreenshot();
@@ -236,12 +252,16 @@ const ScreenshotApp = () => {
             idleSeconds: idle,
             activeSeconds: active,
           };
-
-          const response = await fetch(`${process.env.REACT_APP_API_BASE}/api/screenshot-data`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(dataToSend),
-          });
+          const response = await fetch(
+            `${process.env.REACT_APP_API_BASE}/api/screenshot-data`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+               },
+              body: JSON.stringify(dataToSend),
+            }
+          );
 
           if (!response.ok) console.warn("⚠️ Failed to post screenshot data");
           else console.log("✅ Screenshot data posted successfully");
@@ -281,13 +301,17 @@ const ScreenshotApp = () => {
       const ctx = canvas.getContext("2d");
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      const blob = await new Promise((resolve) =>
+        canvas.toBlob(resolve, "image/png")
+      );
       const arrayBuffer = await blob.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
 
       const result = await window.electronAPI.saveImage(uint8Array);
       if (result.success) {
-        console.log(`✅ Screenshot saved under Task: ${selectedTaskName} [${selectedTaskId}], at: ${result.path}`);
+        console.log(
+          `✅ Screenshot saved under Task: ${selectedTaskName} [${selectedTaskId}], at: ${result.path}`
+        );
         return { success: true, path: result.path };
       } else {
         console.warn("⚠️ Screenshot was not saved.");
@@ -311,7 +335,11 @@ const ScreenshotApp = () => {
       <ConfirmDialog
         open={showQuitConfirm}
         title="Quit session?"
-        subtitle={isCapturing ? "Capture is currently running. We’ll stop it and discard the current cycle." : ""}
+        subtitle={
+          isCapturing
+            ? "Capture is currently running. We’ll stop it and discard the current cycle."
+            : ""
+        }
         onCancel={cancelQuit}
         onConfirm={confirmQuit}
       />
