@@ -107,7 +107,11 @@ const ScreenshotApp = () => {
 
       if (!response.ok) throw new Error("Network response was not ok");
       const data = await response.json();
-      setTaskData(Array.isArray(data?.tasks) ? data.tasks : []);
+      console.log("Tasks fetched:", data);
+      const filteredTasks = Array.isArray(data?.tasks)
+      ? data.tasks.filter((task) => task.status !== "completed")
+      : [];
+      setTaskData(filteredTasks);
     } catch (error) {
       console.error("Fetch error:", error);
     }
