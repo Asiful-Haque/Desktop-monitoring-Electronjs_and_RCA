@@ -47,6 +47,16 @@ h1 {
   padding: 10px 15px;
   cursor: pointer;
   min-width: 160px;
+  background-color: #ae9e0e;
+  color: white;
+  border: none;
+}
+
+#finishBtn {
+  margin: 10px;
+  padding: 10px 15px;
+  cursor: pointer;
+  min-width: 160px;
   background-color: #c64f4f;
   color: white;
   border: none;

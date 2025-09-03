@@ -7,7 +7,7 @@
   --muted: #a7b0c3;
   --brand: #5b8cff;
   --brand-2: #8a6cff;
-  --ring: rgba(91,140,255,0.55);
+  --ring: rgba(59, 59, 56, 0.55);
   --shadow: 0 10px 30px rgba(0,0,0,0.35);
   --radius: 16px;
   --radius-sm: 12px;
@@ -42,7 +42,7 @@ body {
   inset: -20% -10% auto -10%;
   height: 120%;
   background:
-    radial-gradient(600px 300px at 10% 10%, rgba(91,140,255,0.25), transparent 60%),
+    radial-gradient(600px 300px at 10% 10%, rgba(185, 188, 194, 0.25), transparent 60%),
     radial-gradient(500px 280px at 90% 20%, rgba(138,108,255,0.22), transparent 60%),
     radial-gradient(700px 380px at 50% 90%, rgba(77,222,186,0.18), transparent 65%);
   filter: blur(30px);

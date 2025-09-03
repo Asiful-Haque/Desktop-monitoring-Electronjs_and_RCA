@@ -14,7 +14,7 @@ const ConfirmDialog = ({ open, title, subtitle, onCancel, onConfirm }) => {
             Cancel
           </button>
           <button className="btn danger" onClick={onConfirm}>
-            Quit
+            OK
           </button>
         </div>
       </div>
@@ -30,13 +30,15 @@ const ScreenshotApp = () => {
   const captureIntervalRef = useRef(null);
 
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isPaused, setIsPaused] = useState(false); // Track if the task is paused
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [taskData, setTaskData] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [selectedTaskName, setSelectedTaskName] = useState("");
   const [token, setToken] = useState(null); // Store the token
-
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false); // State for finish confirmation
+  const [taskFinished, setTaskFinished] = useState(false); // Track if the task is finished
 
   // Use ref for immediate mutable idle tracking
   const idleSecondsThisCycleRef = useRef(0);
@@ -45,16 +47,34 @@ const ScreenshotApp = () => {
 
   const getTaskId = (t) => t?.id ?? t?.task_id ?? t?._id;
 
+  // Format seconds -> HH:MM:SS
+  const formatTime = (total) => {
+    const s = Math.max(0, Math.floor(total || 0));
+    const hh = String(Math.floor(s / 3600)).padStart(2, "0");
+    const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    return `${hh}:${mm}:${ss}`;
+  };
+
+  // Parse "230" -> 230 (seconds)
+  const toSeconds = (val) => {
+    if (val === null || val === undefined) return 0;
+    const n = parseInt(String(val).trim(), 10);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+  };
+
   const handleChange = (e) => {
     const newId = e.target.value;
     setSelectedTaskId(newId);
     const task = taskData.find((t) => String(getTaskId(t)) === String(newId));
     setSelectedTaskName(task?.task_name ?? "");
+
+    const baseSeconds = toSeconds(task?.last_timing);
+    setElapsedSeconds(baseSeconds);
   };
 
   const user_id = localStorage.getItem("user_id");
 
-  // Fetch token once the component mounts
   useEffect(() => {
     window.electronAPI
       .getTokenCookie()
@@ -69,7 +89,6 @@ const ScreenshotApp = () => {
       .catch((err) => {
         console.error("Error retrieving token:", err);
       });
-    // console.log("Token is ", token);
   }, []);
 
   const fetchData = async (token) => {
@@ -78,22 +97,17 @@ const ScreenshotApp = () => {
         `${process.env.REACT_APP_API_BASE}/api/tasks/${user_id}`,
         {
           method: "GET",
-          // headers: {
-          //   Authorization: `Bearer ${token}`, // Pass the token here
-          // },
-          credentials: 'include', //cx we are calling another 5500's api 
+          credentials: "include", // Because we are calling another 5500's API
         }
       );
       if (response.status === 401) {
         console.log("Token expired or invalid, please log in again");
-        // Trigger re-login or token refresh logic
         return;
       }
 
       if (!response.ok) throw new Error("Network response was not ok");
       const data = await response.json();
       setTaskData(Array.isArray(data?.tasks) ? data.tasks : []);
-      console.log("task data:", data);
     } catch (error) {
       console.error("Fetch error:", error);
     }
@@ -165,8 +179,7 @@ const ScreenshotApp = () => {
   };
 
   const stopTimer = () => {
-    clearInterval(timerRef.current);
-    setElapsedSeconds(0);
+    clearInterval(timerRef.current); // Stop the timer but keep elapsedSeconds
   };
 
   const startSampling = () => {
@@ -198,17 +211,78 @@ const ScreenshotApp = () => {
       showToast("⚠ Please select a task before starting!");
       return;
     }
-    setIsCapturing(true);
-    startTimer();
+
+    if (!isCapturing) {
+      setIsCapturing(true); // Start capturing
+      startTimer(); // Start the timer from the last known `elapsedSeconds`
+      startSampling();
+      startScreenshotCycle();
+    }
+  };
+
+  const handlePause = () => {
+    setIsCapturing(false); // Stop capturing
+    setIsPaused(true); // Set paused state to true
+    stopTimer(); // Stop the timer, but retain elapsedSeconds
+    stopSampling();
+    stopScreenshotCycle();
+  };
+
+  const handleResume = () => {
+    setIsCapturing(true); // Resume capturing
+    setIsPaused(false); // Set paused state to false
+    startTimer(); // Restart the timer
     startSampling();
     startScreenshotCycle();
   };
 
-  const handleStop = () => {
-    setIsCapturing(false);
-    stopTimer();
-    stopSampling();
-    stopScreenshotCycle();
+  const handleFinish = async () => {
+    console.log("Finishing session...");
+    setTaskFinished(true); // Mark the task as finished
+    setIsCapturing(false); // Stop capturing
+    stopTimer(); // Stop the timer
+    stopSampling(); // Stop sampling
+    stopScreenshotCycle(); // Stop the screenshot cycle
+    console.log("Elapsed seconds at finish:", elapsedSeconds);
+    const [hh, mm, ss] = formatTime(elapsedSeconds).split(":").map(Number);
+    const totalSeconds = hh * 3600 + mm * 60 + ss;
+
+    const dataToSend = {
+      taskId: selectedTaskId,
+      last_timing: totalSeconds, // Send last_timing as seconds
+    };
+        try {
+      const response = await fetch(
+        `${process.env.REACT_APP_API_BASE}/api/tasks/task-update/${selectedTaskId}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(dataToSend),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to update task status");
+      }
+      // showToast("Task successfully submitted!");
+    } catch (error) {
+      console.error("Error submitting task:", error);
+      showToast("Error submitting task.");
+    }
+
+    setShowFinishConfirm(true); // Show the finish confirmation dialog
+    setIsPaused(true);
+  };
+
+  const confirmFinish = () => {
+    setShowFinishConfirm(false); // Close the finish confirmation
+    window.location.reload(); // Refresh the page after finishing
+  };
+
+  const cancelFinish = () => {
+    setShowFinishConfirm(false); // Close the finish confirmation if canceled
   };
 
   const handleQuit = () => {
@@ -216,7 +290,7 @@ const ScreenshotApp = () => {
   };
 
   const confirmQuit = () => {
-    if (isCapturing) handleStop();
+    if (isCapturing) handlePause();
     if (streamRef.current) {
       try {
         streamRef.current.getTracks().forEach((t) => t.stop());
@@ -256,9 +330,10 @@ const ScreenshotApp = () => {
             `${process.env.REACT_APP_API_BASE}/api/screenshot-data`,
             {
               method: "POST",
-              headers: { "Content-Type": "application/json",
-                "Authorization": `Bearer ${token}`
-               },
+              headers: {
+                "Content-Type": "application/json",
+              },
+              credentials: 'include',
               body: JSON.stringify(dataToSend),
             }
           );
@@ -324,14 +399,25 @@ const ScreenshotApp = () => {
   return (
     <div className="content">
       {/* Quit + Refresh */}
-      <button id="backBtn" onClick={handleQuit}>
+      <button id="backBtn" onClick={handleQuit}
+      disabled={isCapturing || isPaused}
+      >
         {"< Quit"}
       </button>
-      <button id="refreshBtn" onClick={() => window.location.reload()}>
+      {/* <button id="refreshBtn" onClick={() => window.location.reload()}>
         🔄 Refresh
-      </button>
+      </button> */}
 
-      {/* Confirm dialog */}
+      {/* Finish Confirmation Dialog */}
+      <ConfirmDialog
+        open={showFinishConfirm}
+        title="Task Finished"
+        subtitle="Your task has been completed and saved."
+        onCancel={cancelFinish}
+        onConfirm={confirmFinish}
+      />
+
+      {/* Confirm dialog for quitting */}
       <ConfirmDialog
         open={showQuitConfirm}
         title="Quit session?"
@@ -350,6 +436,7 @@ const ScreenshotApp = () => {
           value={selectedTaskId}
           onChange={handleChange}
           className="scrollable-select"
+          disabled={isCapturing || isPaused} // Disable selection while capturing or paused
         >
           <option value="" disabled>
             Select Task
@@ -363,32 +450,46 @@ const ScreenshotApp = () => {
             );
           })}
         </select>
+
+        {isCapturing && (
+          <p style={{ color: "red", marginTop: "10px" }}>
+            You must finish the current task before selecting a new one.
+          </p>
+        )}
       </div>
 
       <video id="video" ref={videoRef}></video>
 
       <div className="btn-row">
-        <button
-          id="screenshotBtn"
-          className="button is-success"
-          onClick={handleStart}
-          disabled={isCapturing}
-        >
-          {isCapturing ? "Started..." : "Start"}
-        </button>
+        {!isCapturing && !isPaused && (
+          <button
+            id="screenshotBtn"
+            className="button is-success"
+            onClick={handleStart}
+          >
+            Start
+          </button>
+        )}
         <button
           id="stopBtn"
           className="button is-danger"
-          onClick={handleStop}
-          disabled={!isCapturing}
+          onClick={isPaused ? handleResume : handlePause} // Toggle the action based on pause state
         >
-          Stop
+          {isPaused ? "Resume" : "Pause"}
+        </button>
+
+        <button
+          id="finishBtn"
+          className="button is-danger"
+          onClick={handleFinish}
+        >
+          Submit Task
         </button>
       </div>
 
       <div className="timer">
         <strong>Capture Duration:</strong>{" "}
-        <span id="timer">{elapsedSeconds}</span> seconds
+        <span id="timer">{formatTime(elapsedSeconds)}</span>
       </div>
     </div>
   );
