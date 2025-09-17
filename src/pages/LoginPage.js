@@ -49,7 +49,7 @@ const handleLogin = async (e) => {
   e.preventDefault();
   setLoading(true);
   const payload = { email, password };
-
+  console.log("calling hte api with ",email, password);
   try {
     const res = await fetch(`${process.env.REACT_APP_API_BASE}/api/auth/login`, {
       method: "POST",
@@ -83,22 +83,23 @@ const handleLogin = async (e) => {
       localStorage.setItem("user_id", data.id);
       localStorage.setItem("user_name", data.name);
     }
+    console.log("data is ", data);
     pushToast({ type: "success", title: "Welcome back!", message: "Login successful." });
 
     // Corrected: Directly use the method
     console.log("Calling getTokenCookie");
 
-    // window.electronAPI.getTokenCookie() //if you want to check cookie is present or not.......
-    //   .then((token) => {
-    //     if (token) {
-    //       console.log("Token retrieved:", token);  // This will log the token in the main process
-    //     } else {
-    //       console.log("Token not found");
-    //     }
-    //   })
-    //   .catch((err) => {
-    //     console.error("Error retrieving token:", err);
-    //   });
+    window.electronAPI.getTokenCookie() //if you want to check cookie is present or not.......
+      .then((token) => {
+        if (token) {
+          console.log("Token retrieved:", token);  // This will log the token in the main process
+        } else {
+          console.log("Token not found");
+        }
+      })
+      .catch((err) => {
+        console.error("Error retrieving token:", err);
+      });
 
     navigate("/screenshot");
   } catch (err) {

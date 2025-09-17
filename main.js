@@ -104,9 +104,12 @@ ipcMain.handle("save-image", async (_event, buffer) => {
 ipcMain.handle("get-token-cookie", async () => {
   try {
     console.log("Retrieving cookies for http://localhost:5500...");
+    // console.log("Retrieving cookies for https://taskpro.twinstack.net...");
+    
 
     // Retrieve cookies for the given URL (replace with your actual domain)
     const cookies = await session.defaultSession.cookies.get({ url: 'http://localhost:5500' });
+    // const cookies = await session.defaultSession.cookies.get({ url: 'https://taskpro.twinstack.net' });
 
     // Log all cookies to debug
     console.log('Cookies retrieved:', cookies);

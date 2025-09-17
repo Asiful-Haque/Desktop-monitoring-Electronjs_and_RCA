@@ -116,19 +116,30 @@ h1 {
   font-size: 16px;
   border: none;
   border-radius: 5px;
-  background-color: rgb(236, 230, 230);
-  /* color: white; */
-  overflow-y: auto;
+  background-color: rgb(112, 109, 109);
+  color: white;
+  overflow-y: auto; /* Make it scrollable */
+  max-height: 120px; /* Set the max height to 120px */
 }
 
 .scrollable-select option {
   padding: 10px;
 }
 
-/* Scrollable dropdown style */
-.scrollable-select {
-  max-height: 150px;
+/* Optional: Style for the options */
+.scrollable-select::-webkit-scrollbar {
+  width: 8px; /* Scrollbar width */
 }
+
+.scrollable-select::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.3); /* Scrollbar thumb color */
+  border-radius: 4px;
+}
+
+.scrollable-select::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1); /* Scrollbar track color */
+}
+
 username, password {
   margin-top: 40px;
   display: block;
@@ -227,3 +238,64 @@ username, password {
   from{ opacity: 0; }
   to  { opacity: 1; }
 }
+
+
+
+
+
+
+
+
+#video { pointer-events: none; }
+
+.sb-wrap{
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 240px;                 
+  z-index: 1500;
+  transform: translateX(0);
+  transition: transform 240ms ease;
+  display: flex;
+}
+
+.sb-wrap.collapsed{
+  transform: translateX(-192px); 
+}
+
+.sb-content{
+  width: 240px;
+  height: 100%;
+  background: #0f172a;
+  color: #e5e7eb;
+  border-right: 1px solid rgba(255,255,255,0.06);
+  overflow: hidden; 
+}
+
+.sb-rail{
+  position: relative;
+  width: 48px;                   
+  height: 100%;
+  background: #0e172c;           
+  border-right: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18px;
+}
+
+.sb-toggle{
+  background: #1e293b;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 16px;
+  z-index: 1000; 
+}
+
+.app-main{ padding-left: 56px; }
+
+
