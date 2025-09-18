@@ -114,6 +114,7 @@ h1 {
   height: 40px;
   padding: 2px;
   font-size: 16px;
+  margin-top: 5px;
   border: none;
   border-radius: 5px;
   background-color: rgb(112, 109, 109);
@@ -298,4 +299,10 @@ username, password {
 
 .app-main{ padding-left: 56px; }
 
+.selection-warning {
+  margin-top: 10px;
+  color: #ef4444; /* red-500 */
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
 

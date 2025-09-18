@@ -17,7 +17,7 @@ const ConfirmDialog = ({ open, title, subtitle, onCancel, onConfirm }) => {
           <button className="btn ghost" onClick={onCancel} autoFocus>
             Cancel
           </button>
-          <button className="btn danger" onClick={onConfirm}>
+          <button className="btn success" onClick={onConfirm}>
             OK
           </button>
         </div>
@@ -36,21 +36,25 @@ const ScreenshotApp = () => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // DATA
   const [taskData, setTaskData] = useState([]);
+  const [projects, setProjects] = useState([]);
+
+  // SELECTIONS
+  const [selectedProjectId, setSelectedProjectId] = useState(""); // "" = All projects
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [selectedTaskName, setSelectedTaskName] = useState("");
+
   const [token, setToken] = useState(null);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
-
-  // NEW: Logout confirm (same pattern as Quit)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-  // Sidebar collapsed/expanded (two-state rail)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Sidebar
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   // Modal + data for modal
-  const [projects, setProjects] = useState([]);
   const [currUser, setCurrUser] = useState(null);
   const [allUsers, setAllUsers] = useState({});
   const [activeSection, setActiveSection] = useState("dashboard");
@@ -94,7 +98,7 @@ const ScreenshotApp = () => {
     )}:${pad(dt.getSeconds())}`;
   };
 
-  const handleChange = (e) => {
+  const handleTaskChange = (e) => {
     const newId = e.target.value;
     setSelectedTaskId(newId);
     const task = taskData.find((t) => String(getTaskId(t)) === String(newId));
@@ -403,12 +407,13 @@ const ScreenshotApp = () => {
       }
 
       showToast("Time tracking saved!");
-      setShowFinishConfirm(true);
+      setTimeout(() => window.location.reload(), 1000);
+      // setShowFinishConfirm(true);
       segmentsRef.current = [];
     } catch (err) {
       console.error("Error submitting time tracking:", err);
       showToast("Network error submitting time tracking.");
-      setShowFinishConfirm(true);
+      // setShowFinishConfirm(true);
     }
   };
 
@@ -433,12 +438,11 @@ const ScreenshotApp = () => {
   };
   const cancelQuit = () => setShowQuitConfirm(false);
 
-  // Logout (triggered from Sidebar) — EXACTLY like Quit: confirm + disabled
+  // Logout (triggered from Sidebar)
   const handleRequestLogout = () => {
-    if (isCapturing || isPaused) return; // disabled state
-    setShowLogoutConfirm(true); // open confirm dialog
+    if (isCapturing || isPaused) return;
+    setShowLogoutConfirm(true);
   };
-
   const confirmLogout = async () => {
     setShowLogoutConfirm(false);
     if (isCapturing) handlePause();
@@ -448,9 +452,8 @@ const ScreenshotApp = () => {
       } catch {}
       streamRef.current = null;
     }
-    await handleLogout(); // existing logout logic
+    await handleLogout();
   };
-
   const cancelLogout = () => setShowLogoutConfirm(false);
 
   // capture sampling
@@ -556,6 +559,33 @@ const ScreenshotApp = () => {
     []
   );
 
+  /* ----------------- FILTERED TASKS (Project -> Tasks) ----------------- */
+  const filteredTasks = useMemo(() => {
+    if (!selectedProjectId) return taskData;
+    return taskData.filter(
+      (t) => String(t.project_id) === String(selectedProjectId)
+    );
+  }, [taskData, selectedProjectId]);
+
+  // If current selectedTaskId doesn't exist in filteredTasks, clear it.
+  useEffect(() => {
+    if (
+      selectedTaskId &&
+      !filteredTasks.some(
+        (t) => String(getTaskId(t)) === String(selectedTaskId)
+      )
+    ) {
+      setSelectedTaskId("");
+      setSelectedTaskName("");
+      setElapsedSeconds(0);
+    }
+  }, [filteredTasks, selectedTaskId]);
+
+  const handleProjectFilterChange = (e) => {
+    setSelectedProjectId(e.target.value); // "" means ALL
+  };
+  /* -------------------------------------------------------------------- */
+
   return (
     <div className="app-shell">
       {/* Sidebar wrapper: 240px content + 48px rail when collapsed */}
@@ -588,11 +618,6 @@ const ScreenshotApp = () => {
 
       {/* Main content */}
       <main className="app-main">
-        {/* Quit */}
-        {/* <button id="backBtn" onClick={handleQuit} disabled={isCapturing || isPaused}>
-          {"< Quit"}
-        </button> */}
-
         {/* Finish Confirmation */}
         <ConfirmDialog
           open={showFinishConfirm}
@@ -618,7 +643,7 @@ const ScreenshotApp = () => {
           onConfirm={confirmQuit}
         />
 
-        {/* Logout Confirmation (same UX as Quit) */}
+        {/* Logout Confirmation */}
         <ConfirmDialog
           open={showLogoutConfirm}
           title="Log out?"
@@ -631,33 +656,66 @@ const ScreenshotApp = () => {
           onConfirm={confirmLogout}
         />
 
+        {/* ---------------- Project + Task selectors ---------------- */}
         <div className="select-container">
-          <label>Choose Your Task:</label>
-          <select
-            value={selectedTaskId}
-            onChange={handleChange}
-            className="scrollable-select"
-            disabled={isCapturing || isPaused}
+          <div
+            className="filter-row"
+            style={{
+              display: "grid",
+              gap: 10,
+              gridTemplateColumns: "1fr 1fr",
+              alignItems: "end",
+            }}
           >
-            <option value="" disabled>
-              Select Task
-            </option>
-            {taskData.map((task, index) => {
-              const tid = getTaskId(task);
-              return (
-                <option key={tid ?? index} value={tid}>
-                  {task.task_name}
-                </option>
-              );
-            })}
-          </select>
+            <div className="filter-item">
+              <label>Filter by Project:</label>
+              <select
+                value={selectedProjectId}
+                onChange={handleProjectFilterChange}
+                className="scrollable-select"
+                disabled={isCapturing || isPaused}
+              >
+                <option value="">All Projects</option>
+                {projects.map((p) => (
+                  <option key={p.project_id} value={p.project_id}>
+                    {p.project_name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
+            <div className="filter-item">
+              <label>Choose Your Task:</label>
+              <select
+                value={selectedTaskId}
+                onChange={handleTaskChange}
+                className="scrollable-select"
+                disabled={isCapturing || isPaused}
+              >
+                <option value="" disabled>
+                  {filteredTasks.length ? "Select Task" : "No tasks available"}
+                </option>
+                {filteredTasks.map((task) => {
+                  const tid = getTaskId(task);
+                  return (
+                    <option key={tid} value={tid}>
+                      {task.task_name}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+
+          {/* Full-width warning BELOW both selects */}
           {isCapturing && (
-            <p style={{ color: "red", marginTop: "10px" }}>
+            <p className="selection-warning" role="alert">
               You must finish the current task before selecting a new one.
             </p>
           )}
         </div>
+
+        {/* ----------------------------------------------------------- */}
 
         <video id="video" ref={videoRef}></video>
 
