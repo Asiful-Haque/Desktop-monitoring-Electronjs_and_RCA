@@ -141,7 +141,7 @@ const ScreenshotApp = () => {
   const fetchProjects = async () => {
     try {
       const res = await fetch(
-        `${process.env.REACT_APP_API_BASE}/api/projects`,
+        `${process.env.REACT_APP_API_BASE}/api/projects/${user_id}`,
         {
           method: "GET",
           credentials: "include",

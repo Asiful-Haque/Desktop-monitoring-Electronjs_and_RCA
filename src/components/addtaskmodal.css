@@ -11,9 +11,15 @@
 
 
 .btnaddtask{
-  background-color: #92400e;
+  background-color: #2d3a5a;
   color: white;
   border-radius: 5px;
+  cursor: pointer;
+  border: none;
+}
+.btnaddtask:hover{
+  background-color: #566281;
+
 }
 
 /* Target the calendar icon */
@@ -40,7 +46,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 
 .modal-head{
   padding: 14px 16px;
-  background: #92400e; /* amber-900-ish */
+  background: #0e214d; /* amber-900-ish */
   display: flex;
   align-items: center;
   justify-content: space-between;
