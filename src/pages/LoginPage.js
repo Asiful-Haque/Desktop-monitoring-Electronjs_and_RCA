@@ -105,7 +105,7 @@ const handleLogin = async (e) => {
   } catch (err) {
     pushToast({
       type: "error",
-      title: "Network error",
+      title: "Network -- error",
       message: err?.message || "Something went wrong.",
     });
   } finally {

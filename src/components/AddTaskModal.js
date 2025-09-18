@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import "./addtaskmodal.css";
+import Select from "react-select";
+import toast from "../toaster"; 
 
 const statusOptions = ["in_progress", "completed"];
 const priorityOptions = ["low", "medium", "high"];
@@ -13,15 +15,22 @@ const AddTaskModal = ({
 }) => {
   const userOptions = useMemo(() => {
     if (!curruser) return [];
-    // If current user is a Developer: restrict options to self
-    if (curruser?.role === "Developer") {
-      return [{ id: curruser.id, name: curruser.name }];
+    if (curruser?.role_name === "Developer") {
+      return [{ id: curruser.user_id, name: curruser.username }];
     }
-    // Else flatten allusers (assuming your provided shape)
     return Object.values(allusers)
       .flat()
       .map((u) => ({ id: u.user_id, name: u.username }));
   }, [curruser, allusers]);
+
+  const projectOptions = useMemo(
+    () =>
+      projects.map((p) => ({
+        value: String(p.project_id),
+        label: p.project_name,
+      })),
+    [projects]
+  );
 
   const [formData, setFormData] = useState({
     task_name: "",
@@ -36,7 +45,6 @@ const AddTaskModal = ({
 
   useEffect(() => {
     if (!open) {
-      // reset when closing
       setFormData({
         task_name: "",
         task_description: "",
@@ -52,7 +60,7 @@ const AddTaskModal = ({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    // basic validation
+
     const required = [
       "task_name",
       "task_description",
@@ -65,7 +73,7 @@ const AddTaskModal = ({
     ];
     for (const k of required) {
       if (!formData[k]) {
-        alert("Please fill in all fields.");
+        toast.warning("Please fill in all fields.");
         return;
       }
     }
@@ -80,18 +88,105 @@ const AddTaskModal = ({
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err?.message || "Failed to create task");
+        toast.error(err?.message || "Failed to create task");
         return;
       }
+
       const data = await res.json();
-      alert(`Task "${data?.task?.task_name || formData.task_name}" created`);
-      onClose?.(true); // signal success
+      toast.success(`Task "${data?.task?.task_name || formData.task_name}" created`);
+      onClose?.(true); // can close immediately; toaster is global
     } catch (error) {
-      alert(error?.message || "Network error");
+      toast.error(error?.message || "Network error");
     }
   };
 
   if (!open) return null;
+
+  const selectedProject =
+    projectOptions.find((o) => o.value === String(formData.project_name)) ||
+    null;
+
+  const rsStyles = {
+    menuPortal: (base) => ({ ...base, zIndex: 2147483646 }),
+    control: (base, state) => ({
+      ...base,
+      fontFamily:
+        'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"',
+      fontSize: "0.7rem",
+      fontWeight: 500,
+      minHeight: 35,
+      height: 32,
+      background: "rgba(255,255,255,0.07)",
+      borderColor: state.isFocused
+        ? "rgba(255,255,255,0.35)"
+        : "rgba(255,255,255,0.12)",
+      boxShadow: "none",
+      ":hover": { borderColor: "rgba(255,255,255,0.25)" },
+    }),
+    valueContainer: (base) => ({
+      ...base,
+      padding: "0 12px",
+      height: 32,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "flex-start",
+    }),
+    singleValue: (base) => ({
+      ...base,
+      color: "#e7ecff",
+      fontSize: "0.9rem",
+      textAlign: "left",
+      fontWeight: 500,
+    }),
+    placeholder: (base) => ({
+      ...base,
+      color: "#e7ecff",
+      fontSize: "0.9rem",
+      textAlign: "left",
+      fontWeight: 500,
+    }),
+    input: (base) => ({ ...base, color: "#e7ecff", margin: 0, padding: 0 }),
+    indicatorsContainer: (base) => ({ ...base, height: 32 }),
+    dropdownIndicator: (base) => ({
+      ...base,
+      padding: "0 4px",
+      svg: { width: "12px", height: "14px", strokeWidth: 2.2 },
+      color: "#e7ecff",
+      ":hover": { color: "#ffffff" },
+    }),
+    clearIndicator: (base) => ({
+      ...base,
+      padding: "0 4px",
+      svg: { width: "12px", height: "12px" },
+      color: "#e7ecff",
+    }),
+    menu: (base) => ({
+      ...base,
+      background: "#000000FF",
+      border: "1px solid rgba(255,255,255,0.12)",
+    }),
+    menuList: (base) => ({
+      ...base,
+      maxHeight: 160,
+      overflowY: "auto",
+      padding: 0,
+      scrollbarWidth: "none",
+      msOverflowStyle: "none",
+    }),
+    option: (base, state) => ({
+      ...base,
+      fontSize: "0.9rem",
+      padding: "6px 10px",
+      textAlign: "left",
+      background: state.isSelected
+        ? "#1b2234"
+        : state.isFocused
+        ? "rgba(255,255,255,0.06)"
+        : "transparent",
+      color: "#e7ecff",
+      cursor: "pointer",
+    }),
+  };
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
@@ -101,7 +196,11 @@ const AddTaskModal = ({
             <div className="modal-title">Add New Task</div>
             <div className="modal-sub">Create a new task for your project</div>
           </div>
-          <button className="modal-x" onClick={() => onClose?.(false)} aria-label="Close">
+          <button
+            className="modal-x"
+            onClick={() => onClose?.(false)}
+            aria-label="Close"
+          >
             ✕
           </button>
         </div>
@@ -112,7 +211,9 @@ const AddTaskModal = ({
             <input
               id="task_name"
               value={formData.task_name}
-              onChange={(e) => setFormData({ ...formData, task_name: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, task_name: e.target.value })
+              }
               placeholder="Enter task name"
             />
           </div>
@@ -134,7 +235,9 @@ const AddTaskModal = ({
             <select
               id="assigned_to"
               value={formData.assigned_to}
-              onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, assigned_to: e.target.value })
+              }
             >
               <option value="">Select user</option>
               {userOptions.map((u) => (
@@ -158,7 +261,9 @@ const AddTaskModal = ({
               id="start_date"
               type="datetime-local"
               value={formData.start_date}
-              onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, start_date: e.target.value })
+              }
             />
           </div>
 
@@ -168,7 +273,9 @@ const AddTaskModal = ({
               id="deadline"
               type="datetime-local"
               value={formData.deadline}
-              onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, deadline: e.target.value })
+              }
             />
           </div>
 
@@ -177,7 +284,9 @@ const AddTaskModal = ({
             <select
               id="status"
               value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, status: e.target.value })
+              }
             >
               <option value="">Select status</option>
               {statusOptions.map((s) => (
@@ -190,18 +299,20 @@ const AddTaskModal = ({
 
           <div className="frow">
             <label htmlFor="project_name">Project</label>
-            <select
-              id="project_name"
-              value={formData.project_name}
-              onChange={(e) => setFormData({ ...formData, project_name: e.target.value })}
-            >
-              <option value="">Select project</option>
-              {projects.map((p) => (
-                <option key={p.project_id} value={String(p.project_id)}>
-                  {p.project_name}
-                </option>
-              ))}
-            </select>
+            <Select
+              inputId="project_name"
+              classNamePrefix="rs"
+              value={selectedProject}
+              onChange={(opt) =>
+                setFormData({ ...formData, project_name: opt?.value || "" })
+              }
+              options={projectOptions}
+              placeholder="Select project"
+              menuPortalTarget={document.body}
+              menuPosition="fixed"
+              isSearchable
+              styles={rsStyles}
+            />
           </div>
 
           <div className="frow">
@@ -209,7 +320,9 @@ const AddTaskModal = ({
             <select
               id="priority"
               value={formData.priority}
-              onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, priority: e.target.value })
+              }
             >
               <option value="">Select priority</option>
               {priorityOptions.map((p) => (
@@ -221,10 +334,14 @@ const AddTaskModal = ({
           </div>
 
           <div className="modal-foot">
-            <button type="button" className="btn ghost" onClick={() => onClose?.(false)}>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => onClose?.(false)}
+            >
               Cancel
             </button>
-            <button type="submit" className="btn danger">
+            <button type="submit" className="btnaddtask">
               Add Task
             </button>
           </div>

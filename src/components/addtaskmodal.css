@@ -9,6 +9,25 @@
   animation: fadeIn 120ms ease-out;
 }
 
+
+.btnaddtask{
+  background-color: #92400e;
+  color: white;
+  border-radius: 5px;
+}
+
+/* Target the calendar icon */
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);   /* makes black → white */
+  cursor: pointer;
+}
+
+/* Optional: also hide background so it blends in */
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  background-color: transparent;
+  opacity: 1;
+}
+
 .modal-card{
   width: min(92vw, 520px);
   background: #101626;
@@ -30,7 +49,10 @@
 .modal-title{
   font-weight: 800;
   font-size: 1.05rem;
+  text-align: left;
 }
+
+
 .modal-sub{
   font-size: .9rem;
   opacity: .9;
@@ -92,3 +114,79 @@
   from{ opacity: 0; }
   to  { opacity: 1; }
 }
+
+select:focus {
+  outline: none;
+  border-color: #777;
+  background-color: #1a1919;      
+}
+
+/* Remove any global caps that interfere with select sizing */
+.frow select {
+  max-height: none;
+  overflow: visible;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* React-Select skin to match your dark form */
+.rs__control {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  color: #e7ecff;
+  min-height: 40px;
+}
+.rs__control--is-focused {
+  border-color: rgba(255,255,255,0.35);
+  box-shadow: none;
+}
+.rs__value-container { padding: 2px 10px; }
+.rs__single-value, .rs__input-container, .rs__placeholder { color: #e7ecff; }
+.rs__placeholder { color: #98a2b3; }
+.rs__indicators > * { color: #e7ecff; }
+.rs__indicator-separator { display: none; }
+
+.rs__menu {
+  background: #101626;
+  border: 1px solid rgba(255,255,255,0.12);
+  z-index: 99999; /* with menuPortal */
+}
+.rs__menu-list {
+  max-height: 160px; /* ~4–5 rows */
+  overflow-y: auto;  /* single scroll only */
+  padding: 0;
+}
+.rs__menu-list::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari, Electron (Chromium) */
+}
+
+.rs__option {
+  background: transparent;
+  color: #e7ecff;
+  cursor: pointer;
+}
+.rs__option--is-focused { background: rgba(255,255,255,0.06); }
+.rs__option--is-selected { background: #1b2234; }
+
+/* Keep layout consistent with other .frow inputs */
+.frow .rs__control { width: 100%; }
+
+
+
+
+
