@@ -98,13 +98,48 @@ const ScreenshotApp = () => {
     )}:${pad(dt.getSeconds())}`;
   };
 
-  const handleTaskChange = (e) => {
+  const handleTaskChange = async (e) => {
+    ///----------------------------------------
+    console.log("its clicked");
+    console.log(e.target.value);
     const newId = e.target.value;
     setSelectedTaskId(newId);
     const task = taskData.find((t) => String(getTaskId(t)) === String(newId));
     setSelectedTaskName(task?.task_name ?? "");
     const baseSeconds = toSeconds(task?.last_timing);
     setElapsedSeconds(baseSeconds);
+
+    try {
+      const res = await fetch(
+        `${process.env.REACT_APP_API_BASE}/api/tasks/task-flagger`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          credentials: "include",
+          body: JSON.stringify({
+            user_id: Number(user_id),
+            edit_task_id: Number(newId),
+            flagger: 1,
+          }),
+        }
+      );
+
+      const data = await res.json();
+      if (!res.ok) {
+        console.error("Flagger API failed:", data);
+        // optional: roll back optimistic UI or show a toast
+        // setSelectedTaskId(prevId);
+        // setSelectedTaskName(prevName);
+        // setElapsedSeconds(prevSeconds);
+        return;
+      }
+
+      console.log("Flagger API success:", data); // { ok, message, cleared, updated }
+      // optional: toast success
+    } catch (err) {
+      console.error("Flagger API error:", err);
+    }
   };
 
   // token (optional) + initial loads
@@ -322,6 +357,7 @@ const ScreenshotApp = () => {
 
   // SUBMIT
   const handleFinish = async () => {
+    ///----------------------------------------
     if (startAtRef.current) {
       segmentsRef.current.push({
         startAt: new Date(startAtRef.current),
@@ -348,6 +384,7 @@ const ScreenshotApp = () => {
       showToast("Selected task not found.");
       return;
     }
+    console.log("Task data,---", taskData);
 
     const developerId = Number(localStorage.getItem("user_id") || 0);
 
@@ -404,6 +441,32 @@ const ScreenshotApp = () => {
       if (!updateRes.ok) {
         const upd = await updateRes.json().catch(() => ({}));
         console.warn("Task update (last_timing) failed:", upd);
+      }
+
+      try {
+        const res = await fetch(
+          `${process.env.REACT_APP_API_BASE}/api/tasks/task-flagger`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            credentials: "include",
+            body: JSON.stringify({
+              user_id: Number(user_id),
+              edit_task_id: Number(selectedTaskId),
+              flagger: 0,
+            }),
+          }
+        );
+
+        const data = await res.json();
+        if (!res.ok) {
+          console.error("Flagger API failed:", data);
+          return;
+        }
+        console.log("Flagger API success:", data);
+      } catch (err) {
+        console.error("Flagger API error:", err);
       }
 
       showToast("Time tracking saved!");
