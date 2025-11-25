@@ -112,12 +112,12 @@ ipcMain.handle("get-token-cookie", async () => {
     // const cookies = await session.defaultSession.cookies.get({ url: 'https://taskpro.twinstack.net' });
 
     // Log all cookies to debug
-    console.log('Cookies retrieved:', cookies);
+    // console.log('Cookies retrieved:', cookies);
 
     // Find the token cookie
     const tokenCookie = cookies.find(cookie => cookie.name === 'token');
     if (tokenCookie) {
-      console.log('Token cookie found:', tokenCookie.value);  // Log the token in the console
+      // console.log('Token cookie found:', tokenCookie.value); 
       return tokenCookie.value; // Return token to renderer process if needed
     } else {
       console.log('Token cookie not found');

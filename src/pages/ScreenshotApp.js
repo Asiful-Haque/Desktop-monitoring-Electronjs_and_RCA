@@ -72,6 +72,8 @@ const ScreenshotApp = () => {
   const user_id = localStorage.getItem("user_id");
   const user_name = localStorage.getItem("user_name");
 
+  const API_BASE = process.env.REACT_APP_API_BASE;
+
   // ---- helpers ----
   const getTaskId = (t) => t?.id ?? t?.task_id ?? t?._id;
   const pad = (n) => String(n).padStart(2, "0");
@@ -98,52 +100,169 @@ const ScreenshotApp = () => {
     )}:${pad(dt.getSeconds())}`;
   };
 
+  // ========= FREELANCER APPROVAL STATE =========
+  const [approvalStatus, setApprovalStatus] = useState(null); // 0,1,2
+  const [approvalLoading, setApprovalLoading] = useState(false);
+  const [approvalError, setApprovalError] = useState("");
+
+  const approvalApiBase = `${API_BASE}/api/users`;
+
+  // Role detection (robust)
+  const getRoleLower = () => {
+    const fromUser = (
+      currUser?.role ||
+      currUser?.user_role ||
+      currUser?.role_name ||
+      ""
+    )
+      .toString()
+      .trim()
+      .toLowerCase();
+
+    if (fromUser) return fromUser;
+
+    const fromLocal = (localStorage.getItem("user_role") || "")
+      .toString()
+      .trim()
+      .toLowerCase();
+    return fromLocal;
+  };
+
+  const isFreelancer = getRoleLower() === "freelancer";
+
+  async function fetchApprovalStatus(uid) {
+    try {
+      console.log("[Approval] Fetching via POST … user_id:", uid);
+      setApprovalLoading(true);
+      setApprovalError("");
+
+      const res = await fetch(
+        `${approvalApiBase}/Time-sheet-approval/getLatestValue`,
+        {
+          method: "POST",
+          credentials: "include",
+          cache: "no-store",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({ user_id: Number(uid) }),
+        }
+      );
+
+      const json = await res.json();
+      console.log("[Approval] Response:", json);
+
+      if (!res.ok) {
+        throw new Error(json?.message || "Failed to fetch approval status");
+      }
+
+      const val = Number(json?.time_sheet_approval);
+      const normalized = Number.isFinite(val) ? val : 0;
+      // 0 = not sent, 1 = sent, 2 = rejected (example mapping)
+      setApprovalStatus(normalized === 1 ? 1 : normalized === 2 ? 2 : 0);
+
+      // previous behavior: return true if status === 0 (can send)
+      return normalized === 0;
+    } catch (e) {
+      console.error("getLatestValue error:", e);
+      setApprovalError(e?.message || "Failed to fetch approval status");
+      return false; // be conservative on error
+    } finally {
+      setApprovalLoading(false);
+    }
+  }
+
+  const blockSelections =
+    isFreelancer && approvalStatus === 1 && !approvalLoading;
+
+  const showToast = (message) => {
+    const toast = document.createElement("div");
+    toast.className = "custom-toast";
+    toast.innerText = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add("show"));
+    setTimeout(() => {
+      toast.classList.remove("show");
+      setTimeout(() => toast.parentNode?.removeChild(toast), 300);
+    }, 2500);
+  };
+
+  // ---------- helper to update task flagger ----------
+  const updateTaskFlagger = async (taskId, flagValue) => {
+    if (!taskId && taskId !== 0 && taskId !== "0") return;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/tasks/task-flagger`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        credentials: "include",
+        body: JSON.stringify({
+          user_id: Number(user_id),
+          edit_task_id: Number(taskId),
+          flagger: Number(flagValue),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        console.error("Flagger API failed:", data);
+        return;
+      }
+      console.log("Flagger API success:", data);
+    } catch (err) {
+      console.error("Flagger API error:", err);
+    }
+  };
+  // --------------------------------------------------------
+
+  // When user changes task (including selecting "none"/default option)
   const handleTaskChange = async (e) => {
-    ///----------------------------------------
-    console.log("its clicked");
-    console.log(e.target.value);
-    const newId = e.target.value;
+    if (blockSelections) {
+      showToast("Let Admin approve previous Payments before");
+      return;
+    }
+
+    const newId = e.target.value;         // "" (none) or task id
+    const prevId = selectedTaskId;        // old selection
+
+    // 1) If there was a previous task selected, reset its flagger to 0
+    if (prevId) {
+      updateTaskFlagger(prevId, 0);
+    }
+
+    // 2) If user selected the "none / Select Task" option
+    if (!newId) {
+      setSelectedTaskId("");
+      setSelectedTaskName("");
+      setElapsedSeconds(0);
+      localStorage.removeItem("selectedTaskId");
+      return; // don't set any new flagger
+    }
+
+    // 3) Normal flow for a real task selection
     setSelectedTaskId(newId);
     const task = taskData.find((t) => String(getTaskId(t)) === String(newId));
     setSelectedTaskName(task?.task_name ?? "");
     const baseSeconds = toSeconds(task?.last_timing);
     setElapsedSeconds(baseSeconds);
 
-    try {
-      const res = await fetch(
-        `${process.env.REACT_APP_API_BASE}/api/tasks/task-flagger`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-          credentials: "include",
-          body: JSON.stringify({
-            user_id: Number(user_id),
-            edit_task_id: Number(newId),
-            flagger: 1,
-          }),
-        }
-      );
+    // Remember this in localStorage for refresh cleanup
+    localStorage.setItem("selectedTaskId", newId);
 
-      const data = await res.json();
-      if (!res.ok) {
-        console.error("Flagger API failed:", data);
-        // optional: roll back optimistic UI or show a toast
-        // setSelectedTaskId(prevId);
-        // setSelectedTaskName(prevName);
-        // setElapsedSeconds(prevSeconds);
-        return;
-      }
-
-      console.log("Flagger API success:", data); // { ok, message, cleared, updated }
-      // optional: toast success
-    } catch (err) {
-      console.error("Flagger API error:", err);
-    }
+    // Flag this new task as 1
+    updateTaskFlagger(newId, 1);
   };
 
   // token (optional) + initial loads
   useEffect(() => {
+    const roleLS = (localStorage.getItem("user_role") || "").toString();
+    console.log("[Approval] Early check. {roleLS, user_id}", {
+      roleLS,
+      user_id,
+    });
+
     window.electronAPI
       .getTokenCookie()
       .then((fetchedToken) => {
@@ -157,14 +276,25 @@ const ScreenshotApp = () => {
         fetchProjects();
         fetchUsers();
       });
-  }, []);
+  }, []); // mount only
+
+  // 🔁 On refresh / new mount: if we had a previous selected task stored,
+  // reset its flagger to 0 and clear the stored key.
+  useEffect(() => {
+    const lastTaskId = localStorage.getItem("selectedTaskId");
+    if (lastTaskId) {
+      console.log("[Flagger] Resetting last selected task on mount:", lastTaskId);
+      updateTaskFlagger(lastTaskId, 0);
+      localStorage.removeItem("selectedTaskId");
+    }
+  }, []); // run once on mount
 
   const fetchTasks = async () => {
     try {
-      const response = await fetch(
-        `${process.env.REACT_APP_API_BASE}/api/tasks/${user_id}`,
-        { method: "GET", credentials: "include" }
-      );
+      const response = await fetch(`${API_BASE}/api/tasks/${user_id}`, {
+        method: "GET",
+        credentials: "include",
+      });
       if (response.status === 401) return;
       if (!response.ok) throw new Error("Network response was not ok");
       const data = await response.json();
@@ -179,13 +309,10 @@ const ScreenshotApp = () => {
 
   const fetchProjects = async () => {
     try {
-      const res = await fetch(
-        `${process.env.REACT_APP_API_BASE}/api/projects/${user_id}`,
-        {
-          method: "GET",
-          credentials: "include",
-        }
-      );
+      const res = await fetch(`${API_BASE}/api/projects/${user_id}`, {
+        method: "GET",
+        credentials: "include",
+      });
       if (res.ok) {
         const data = await res.json();
         const raw = Array.isArray(data?.projects)
@@ -208,7 +335,7 @@ const ScreenshotApp = () => {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch(`${process.env.REACT_APP_API_BASE}/api/users`, {
+      const res = await fetch(`${API_BASE}/api/users`, {
         method: "GET",
         credentials: "include",
       });
@@ -220,7 +347,16 @@ const ScreenshotApp = () => {
         if (uid && Array.isArray(data?.users)) {
           const me =
             data.users.find((u) => String(u.user_id) === String(uid)) || null;
+          console.log("[Users] Current user loaded:", me);
           setCurrUser(me);
+
+          const resolvedRole =
+            (me?.role || me?.user_role || me?.role_name || "")
+              .toString()
+              .trim();
+          if (resolvedRole) {
+            localStorage.setItem("user_role", resolvedRole);
+          }
         }
       }
     } catch (e) {
@@ -228,17 +364,28 @@ const ScreenshotApp = () => {
     }
   };
 
-  const showToast = (message) => {
-    const toast = document.createElement("div");
-    toast.className = "custom-toast";
-    toast.innerText = message;
-    document.body.appendChild(toast);
-    requestAnimationFrame(() => toast.classList.add("show"));
-    setTimeout(() => {
-      toast.classList.remove("show");
-      setTimeout(() => toast.parentNode?.removeChild(toast), 300);
-    }, 2500);
-  };
+  // Fetch approval status when we know current user & they are freelancer
+  useEffect(() => {
+    if (!currUser?.user_id) {
+      console.log("[Approval] currUser not ready yet; waiting…");
+      return;
+    }
+    const roleLower = getRoleLower();
+    if (roleLower === "freelancer") {
+      console.log(
+        "[Approval] Checking via currUser. user_id:",
+        currUser.user_id,
+        "role:",
+        roleLower
+      );
+      // initial load check
+      fetchApprovalStatus(currUser.user_id);
+    } else {
+      console.log("[Approval] Not a freelancer:", roleLower);
+      setApprovalStatus(null);
+      setApprovalError("");
+    }
+  }, [currUser?.user_id, currUser?.role, currUser?.user_role, currUser?.role_name]);
 
   // video stream + periodic refresh
   useEffect(() => {
@@ -248,6 +395,11 @@ const ScreenshotApp = () => {
         if (!sources.length) return;
 
         const selectedSource = sources[0];
+
+        try {
+          await videoRef.current?.pause?.();
+        } catch {}
+
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
@@ -281,7 +433,7 @@ const ScreenshotApp = () => {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
-  }, []);
+  }, []); // mount only
 
   // timers/sampling/capture
   const startTimer = () => {
@@ -311,8 +463,17 @@ const ScreenshotApp = () => {
   };
   const stopScreenshotCycle = () => clearInterval(captureIntervalRef.current);
 
-  // START
-  const handleStart = () => {
+  // === LIVE CHECK on Start ===
+  const handleStart = async () => {
+    // If freelancer, do a fresh approval check right now
+    if (isFreelancer && currUser?.user_id) {
+      const allowed = await fetchApprovalStatus(currUser.user_id);
+      if (!allowed) {
+        showToast("Let Admin approve previous Payments before");
+        return;
+      }
+    }
+
     if (!selectedTaskId) {
       showToast("⚠ Please select a task before starting!");
       return;
@@ -328,8 +489,13 @@ const ScreenshotApp = () => {
     }
   };
 
-  // PAUSE
+  // PAUSE (disabled when approval is 1; also guarded)
   const handlePause = () => {
+    if (isFreelancer && approvalStatus === 1) {
+      showToast("Let Admin approve previous Payments before");
+      return;
+    }
+
     if (startAtRef.current) {
       segmentsRef.current.push({
         startAt: new Date(startAtRef.current),
@@ -345,8 +511,15 @@ const ScreenshotApp = () => {
     stopScreenshotCycle();
   };
 
-  // RESUME
-  const handleResume = () => {
+  // RESUME (also re-check live)
+  const handleResume = async () => {
+    if (isFreelancer && currUser?.user_id) {
+      const allowed = await fetchApprovalStatus(currUser.user_id);
+      if (!allowed) {
+        showToast("Let Admin approve previous Payments before");
+        return;
+      }
+    }
     startAtRef.current = new Date();
     setIsCapturing(true);
     setIsPaused(false);
@@ -357,7 +530,6 @@ const ScreenshotApp = () => {
 
   // SUBMIT
   const handleFinish = async () => {
-    ///----------------------------------------
     if (startAtRef.current) {
       segmentsRef.current.push({
         startAt: new Date(startAtRef.current),
@@ -407,15 +579,12 @@ const ScreenshotApp = () => {
     const bodyToSend = rows.length === 1 ? rows[0] : rows;
 
     try {
-      const ttRes = await fetch(
-        `${process.env.REACT_APP_API_BASE}/api/time-tracking`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(bodyToSend),
-        }
-      );
+      const ttRes = await fetch(`${API_BASE}/api/time-tracking`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(bodyToSend),
+      });
       const ttData = await ttRes.json();
       if (!ttRes.ok) {
         showToast(ttData?.error || "Failed to submit time tracking.");
@@ -427,7 +596,7 @@ const ScreenshotApp = () => {
       const totalSeconds = hh * 3600 + mm * 60 + ss;
 
       const updateRes = await fetch(
-        `${process.env.REACT_APP_API_BASE}/api/tasks/task-update/${selectedTaskId}`,
+        `${API_BASE}/api/tasks/task-update/${selectedTaskId}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -443,40 +612,16 @@ const ScreenshotApp = () => {
         console.warn("Task update (last_timing) failed:", upd);
       }
 
-      try {
-        const res = await fetch(
-          `${process.env.REACT_APP_API_BASE}/api/tasks/task-flagger`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            cache: "no-store",
-            credentials: "include",
-            body: JSON.stringify({
-              user_id: Number(user_id),
-              edit_task_id: Number(selectedTaskId),
-              flagger: 0,
-            }),
-          }
-        );
-
-        const data = await res.json();
-        if (!res.ok) {
-          console.error("Flagger API failed:", data);
-          return;
-        }
-        console.log("Flagger API success:", data);
-      } catch (err) {
-        console.error("Flagger API error:", err);
-      }
+      // reset flagger for this task on successful submit
+      await updateTaskFlagger(selectedTaskId, 0);
+      localStorage.removeItem("selectedTaskId");
 
       showToast("Time tracking saved!");
       setTimeout(() => window.location.reload(), 1000);
-      // setShowFinishConfirm(true);
       segmentsRef.current = [];
     } catch (err) {
       console.error("Error submitting time tracking:", err);
       showToast("Network error submitting time tracking.");
-      // setShowFinishConfirm(true);
     }
   };
 
@@ -536,7 +681,7 @@ const ScreenshotApp = () => {
             idleSeconds: idle,
             activeSeconds: active,
           };
-          await fetch(`${process.env.REACT_APP_API_BASE}/api/screenshot-data`, {
+          await fetch(`${API_BASE}/api/screenshot-data`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
@@ -557,6 +702,11 @@ const ScreenshotApp = () => {
       if (!sources.length) return;
 
       const selectedSource = sources[0];
+
+      try {
+        await videoRef.current?.pause?.();
+      } catch {}
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
@@ -593,7 +743,7 @@ const ScreenshotApp = () => {
   // logout request
   const handleLogout = async () => {
     try {
-      await fetch(`${process.env.REACT_APP_API_BASE}/api/logout`, {
+      await fetch(`${API_BASE}/api/logout`, {
         method: "POST",
         credentials: "include",
       }).catch(() => {});
@@ -645,9 +795,12 @@ const ScreenshotApp = () => {
   }, [filteredTasks, selectedTaskId]);
 
   const handleProjectFilterChange = (e) => {
+    if (blockSelections) {
+      showToast("Let Admin approve previous Payments before");
+      return;
+    }
     setSelectedProjectId(e.target.value); // "" means ALL
   };
-  /* -------------------------------------------------------------------- */
 
   return (
     <div className="app-shell">
@@ -736,7 +889,12 @@ const ScreenshotApp = () => {
                 value={selectedProjectId}
                 onChange={handleProjectFilterChange}
                 className="scrollable-select"
-                disabled={isCapturing || isPaused}
+                disabled={
+                  isCapturing ||
+                  isPaused ||
+                  blockSelections ||
+                  approvalLoading
+                }
               >
                 <option value="">All Projects</option>
                 {projects.map((p) => (
@@ -753,9 +911,15 @@ const ScreenshotApp = () => {
                 value={selectedTaskId}
                 onChange={handleTaskChange}
                 className="scrollable-select"
-                disabled={isCapturing || isPaused}
+                disabled={
+                  isCapturing ||
+                  isPaused ||
+                  blockSelections ||
+                  approvalLoading
+                }
               >
-                <option value="" disabled>
+                {/* NOTE: now this is selectable (not disabled) and value="" means "none" */}
+                <option value="">
                   {filteredTasks.length ? "Select Task" : "No tasks available"}
                 </option>
                 {filteredTasks.map((task) => {
@@ -770,10 +934,10 @@ const ScreenshotApp = () => {
             </div>
           </div>
 
-          {/* Full-width warning BELOW both selects */}
-          {isCapturing && (
+          {/* Full-width warning BELOW both selects when blocked */}
+          {isFreelancer && approvalStatus === 1 && (
             <p className="selection-warning" role="alert">
-              You must finish the current task before selecting a new one.
+              Let Admin approve previous Payments before
             </p>
           )}
         </div>
@@ -788,6 +952,12 @@ const ScreenshotApp = () => {
               id="screenshotBtn"
               className="button is-success"
               onClick={handleStart}
+              disabled={approvalLoading} // Start is live-checked on click; not hard-disabled by status
+              title={
+                isFreelancer && approvalStatus === 1
+                  ? "We’ll re-check approval when you click Start"
+                  : ""
+              }
             >
               Start
             </button>
@@ -796,8 +966,16 @@ const ScreenshotApp = () => {
             id="stopBtn"
             className="button is-danger"
             onClick={isPaused ? handleResume : handlePause}
+            disabled={
+              (!isPaused && isFreelancer && approvalStatus === 1) || false
+            }
+            title={
+              !isPaused && isFreelancer && approvalStatus === 1
+                ? "Claim previous Payments before"
+                : ""
+            }
           >
-            {isPaused ? "Resume" : "Pause"}
+            {isPaused ? "Pause" : "Pause"}
           </button>
 
           <button
