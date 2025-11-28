@@ -80,8 +80,11 @@ const handleLogin = async (e) => {
 
     const data = typeof raw === "string" && raw ? JSON.parse(raw) : raw;
     if (data?.name) {
+      console.log("Data inside login ", data);
       localStorage.setItem("user_id", data.id);
       localStorage.setItem("user_name", data.name);
+      localStorage.setItem("tenant_id", data.tenant_id);
+      localStorage.setItem("user_role", data.role);
     }
     console.log("data is ", data);
     pushToast({ type: "success", title: "Welcome back!", message: "Login successful." });

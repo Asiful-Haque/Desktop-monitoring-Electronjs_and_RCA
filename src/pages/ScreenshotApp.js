@@ -71,7 +71,7 @@ const ScreenshotApp = () => {
 
   const user_id = localStorage.getItem("user_id");
   const user_name = localStorage.getItem("user_name");
-
+  const tenant_id = localStorage.getItem("tenant_id");
   const API_BASE = process.env.REACT_APP_API_BASE;
 
   // ---- helpers ----
@@ -348,6 +348,7 @@ const ScreenshotApp = () => {
           const me =
             data.users.find((u) => String(u.user_id) === String(uid)) || null;
           console.log("[Users] Current user loaded:", me);
+          console.log("Dats users ", data?.users);
           setCurrUser(me);
 
           const resolvedRole =
@@ -556,9 +557,9 @@ const ScreenshotApp = () => {
       showToast("Selected task not found.");
       return;
     }
-    console.log("Task data,---", taskData);
 
     const developerId = Number(localStorage.getItem("user_id") || 0);
+    const tenant_id = Number(localStorage.getItem("tenant_id") || 0);
 
     const rows = segmentsRef.current
       .filter((s) => s.startAt && s.endAt && s.endAt > s.startAt)
@@ -569,6 +570,7 @@ const ScreenshotApp = () => {
         work_date: formatDateYMD(seg.startAt),
         task_start: formatDateTime(seg.startAt),
         task_end: formatDateTime(seg.endAt),
+        tenant_id: tenant_id || null,
       }));
 
     if (rows.length === 0) {
@@ -748,6 +750,10 @@ const ScreenshotApp = () => {
         credentials: "include",
       }).catch(() => {});
       localStorage.removeItem("user_id");
+      localStorage.removeItem("auth_name");
+      localStorage.removeItem("user_name");
+      localStorage.removeItem("user_role");
+      localStorage.removeItem("tenant_id");
       try {
         await window.electronAPI?.clearTokenCookie?.();
       } catch {}
