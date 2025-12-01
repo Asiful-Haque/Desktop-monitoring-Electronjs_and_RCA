@@ -1,0 +1,112 @@
+{
+  "appName": "TaskPro",
+  "tagline": "Productivity Suite",
+
+  "welcomeBack": "Welcome back",
+  "welcomeDesc": "Sign in to access your dashboard, activity timeline, and scheduled tasks.",
+
+  "secureSession": "Secure session",
+  "fastLogin": "Fast login",
+  "teamReady": "Team-ready",
+
+  "signIn": "Sign in",
+  "subtitle": "Use your credentials to continue.",
+
+  "emailLabel": "Email",
+  "emailPlaceholder": "you@company.com",
+  "passwordLabel": "Password",
+  "passwordPlaceholder": "••••••••",
+
+  "login": "Login",
+  "loggingIn": "Logging in…",
+
+  "noAccount": "If you don't have an account, please contact your administrator.",
+
+  "lang": {
+    "label": "Language",
+    "aria": "Language selection"
+  },
+
+  "dashboard": {
+    "title": "Time Capture Dashboard",
+    "subtitle": "Track your work time with automatic screenshots and smart approvals.",
+    "userFallback": "User",
+    "roleFallback": "Team Member",
+
+    "summary": {
+      "status": {
+        "label": "Current Status",
+        "recording": "Recording",
+        "paused": "Paused",
+        "idle": "Idle",
+        "sub": "Live capture with idle detection"
+      },
+      "today": {
+        "label": "Today's Time",
+        "sub": "Session duration"
+      }
+    },
+
+    "workContext": {
+      "title": "Work Context",
+      "tag": "Live",
+      "filterProject": {
+        "label": "Filter by Project",
+        "all": "All Projects"
+      },
+      "task": {
+        "label": "Choose Your Task",
+        "select": "Select Task",
+        "none": "No tasks available"
+      },
+      "warning": "Let Admin approve previous Payments before"
+    },
+
+    "controls": {
+      "title": "Session Controls",
+      "start": "Start Recording",
+      "pause": "Pause",
+      "resume": "Resume",
+      "submit": "Submit Task",
+      "captureDuration": "Capture Duration"
+    },
+
+    "preview": {
+      "title": "Live Screen Preview",
+      "subtitle": "Screenshots are taken automatically when you're active."
+    }
+  },
+
+  "confirm": {
+    "cancel": "Cancel",
+    "ok": "OK",
+    "taskFinished": {
+      "title": "Task Finished",
+      "subtitle": "Your task has been completed and saved."
+    },
+    "quit": {
+      "title": "Quit session?",
+      "subtitleRunning": "Capture is currently running. We’ll stop it and discard the current cycle."
+    },
+    "logout": {
+      "title": "Log out?",
+      "subtitleRunning": "Capture is currently running. We’ll stop it before logging out."
+    }
+  },
+
+  "toast": {
+    "loginFailed": "Login failed",
+    "networkError": "Network error",
+    "welcomeTitle": "Welcome back!",
+    "loginSuccess": "Login successful.",
+
+    "approvalBlock": "Let Admin approve previous Payments before",
+    "selectTaskFirst": "⚠ Please select a task before starting!",
+    "noTimeCaptured": "No time captured. Please Start first.",
+    "taskNotFound": "Selected task not found.",
+    "nothingToSubmit": "Nothing to submit.",
+    "submitFailed": "Failed to submit time tracking.",
+    "timeSaved": "Time tracking saved!",
+    "submitNetworkError": "Network error submitting time tracking."
+  }
+}

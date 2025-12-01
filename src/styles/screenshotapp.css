@@ -306,3 +306,553 @@ username, password {
   line-height: 1.35;
 }
 
+/* ------------------------------------------------------------------
+ */
+
+
+/* Global reset / base ------------------------------------------ */
+html,
+body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  background: #020617; /* deep slate */
+  color: #0f172a;
+  overflow-x: hidden;
+}
+
+body {
+  max-width: 100vw;
+  box-sizing: border-box;
+}
+
+/* Shell / main layout ------------------------------------------ */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  background: radial-gradient(circle at top left, #1d4ed8 0, transparent 55%),
+    radial-gradient(circle at top right, #0ea5e9 0, transparent 60%),
+    linear-gradient(135deg, #020617 0%, #020617 55%, #020617 100%);
+  color: #e5e7eb;
+}
+
+/* Sidebar (you already had this, just slightly tuned) ---------- */
+
+#video {
+  pointer-events: none;
+}
+
+.sb-wrap {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 240px;
+  z-index: 1500;
+  transform: translateX(0);
+  transition: transform 240ms ease;
+  display: flex;
+}
+
+.sb-wrap.collapsed {
+  transform: translateX(-192px);
+}
+
+.sb-content {
+  width: 240px;
+  height: 100%;
+  background: #020617;
+  color: #e5e7eb;
+  border-right: 1px solid rgba(148, 163, 184, 0.26);
+  overflow: hidden;
+}
+
+.sb-rail {
+  position: relative;
+  width: 48px;
+  height: 100%;
+  background: #020617;
+  border-right: 1px solid rgba(148, 163, 184, 0.16);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18px;
+}
+
+.sb-toggle {
+  background: #1f2937;
+  color: #f9fafb;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 16px;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.5);
+}
+
+.sb-toggle:hover {
+  background: #111827;
+}
+
+.app-main {
+  margin-left: 56px;
+  flex: 1;
+  padding: 24px 32px 32px;
+  max-width: 1440px;
+  margin-right: auto;
+}
+
+/* Top header --------------------------------------------------- */
+
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.dh-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-title {
+  margin: 0;
+  font-size: 1.75rem;
+  color: #f9fafb;
+  letter-spacing: 0.01em;
+}
+
+.app-subtitle {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #9ca3af;
+}
+
+.dh-right {
+  display: flex;
+  align-items: center;
+}
+
+.user-pill {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  gap: 10px;
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  color: #f9fafb;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.user-name {
+  font-size: 0.9rem;
+  color: #e5e7eb;
+  font-weight: 600;
+}
+
+.user-role {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+/* Dashboard grid ---------------------------------------------- */
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.2fr);
+  gap: 18px;
+}
+
+.dg-left,
+.dg-right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Summary row (like top stat cards) --------------------------- */
+
+.summary-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.summary-card {
+  background: rgba(15, 23, 42, 0.92);
+  border-radius: 18px;
+  padding: 14px 16px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.48);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.summary-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9ca3af;
+}
+
+.summary-value {
+  display: block;
+  margin-top: 6px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #f9fafb;
+}
+
+.status-running {
+  color: #4ade80;
+}
+
+.summary-sub {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+/* Generic card styling ---------------------------------------- */
+
+.card {
+  background: #020617;
+  border-radius: 18px;
+  padding: 16px 18px 18px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(15, 23, 42, 0.8);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 1rem;
+  color: #f9fafb;
+}
+
+.card-subtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.card-tag {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: rgba(37, 99, 235, 0.12);
+  color: #bfdbfe;
+}
+
+.card-body {
+  margin-top: 4px;
+}
+
+/* Filters ------------------------------------------------------ */
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.filter-label {
+  font-size: 0.8rem;
+  color: #cbd5f5;
+}
+
+/* Selects – styled like modern inputs -------------------------- */
+
+.scrollable-select {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  font-size: 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.85);
+  color: #f9fafb;
+  outline: none;
+  appearance: none;
+  max-height: 120px;
+}
+
+.scrollable-select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.8);
+}
+
+.scrollable-select option {
+  background: #020617;
+  color: #f9fafb;
+}
+
+.scrollable-select::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollable-select::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.6);
+  border-radius: 4px;
+}
+
+.scrollable-select::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
+
+/* Warning text under filters ---------------------------------- */
+
+.selection-warning {
+  margin-top: 10px;
+  color: #f97373;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+/* Controls + buttons ------------------------------------------ */
+
+.card-controls .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Buttons share similar look to Finovate tiles */
+
+.btn-primary,
+.btn-warning,
+.btn-success {
+  border: none;
+  cursor: pointer;
+  min-width: 150px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #f9fafb;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.55);
+  transition: transform 120ms ease, box-shadow 120ms ease,
+    filter 120ms ease;
+}
+
+.dh-lang {
+  margin-right: 16px;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+}
+
+.btn-warning {
+  background: linear-gradient(135deg, #f97316, #f59e0b);
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+}
+
+.btn-primary:hover,
+.btn-warning:hover,
+.btn-success:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.7);
+}
+
+.btn-primary:disabled,
+.btn-warning:disabled,
+.btn-success:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Timer chip --------------------------------------------------- */
+
+.timer-chip {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+}
+
+.timer-label {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.timer-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+/* Live preview card ------------------------------------------- */
+
+.card-preview .preview-body {
+  margin-top: 8px;
+}
+
+#video {
+  width: 100%;
+  max-height: 360px;
+  object-fit: cover;
+  border-radius: 16px;
+  background: #020617;
+  border: 1px solid rgba(15, 23, 42, 0.8);
+}
+
+/* Toast -------------------------------------------------------- */
+
+.custom-toast {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  background: linear-gradient(135deg, #0ea5e9, #22c55e);
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 999px;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  z-index: 9999;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.7);
+}
+
+.custom-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Confirm dialog ---------------------------------------------- */
+
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  z-index: 9998;
+  animation: fadeIn 120ms ease-out;
+}
+
+.confirm-card {
+  width: min(92vw, 420px);
+  background: #020617;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.85);
+  padding: 18px 20px 16px;
+  color: #e7ecff;
+}
+
+.confirm-title {
+  margin: 4px 0 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.confirm-subtitle {
+  margin: 0 0 14px;
+  color: #b7c0d8;
+  line-height: 1.35;
+  font-size: 0.95rem;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn.ghost {
+  background: rgba(15, 23, 42, 0.9);
+  color: #e7ecff;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+}
+
+.btn.ghost:hover {
+  background: rgba(15, 23, 42, 1);
+}
+
+.btn.success {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #f9fafb;
+  box-shadow: 0 12px 28px rgba(21, 128, 61, 0.65);
+}
+
+.btn.success:hover {
+  filter: brightness(1.05);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Small screen tweaks ----------------------------------------- */
+@media (max-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

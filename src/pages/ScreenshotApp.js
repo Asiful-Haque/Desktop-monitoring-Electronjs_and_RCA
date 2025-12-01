@@ -1,12 +1,22 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import "../styles/screenshotapp.css";
 
 /* Your components */
 import Sidebar from "../components/Sidebar";
 import AddTaskModal from "../components/AddTaskModal";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 
 /* ---------- Minimal Confirm Dialog (kept inline) ---------- */
-const ConfirmDialog = ({ open, title, subtitle, onCancel, onConfirm }) => {
+const ConfirmDialog = ({
+  open,
+  title,
+  subtitle,
+  onCancel,
+  onConfirm,
+  cancelText,
+  okText,
+}) => {
   if (!open) return null;
   return (
     <div className="confirm-backdrop" role="dialog" aria-modal="true">
@@ -15,10 +25,10 @@ const ConfirmDialog = ({ open, title, subtitle, onCancel, onConfirm }) => {
         {subtitle ? <p className="confirm-subtitle">{subtitle}</p> : null}
         <div className="confirm-actions">
           <button className="btn ghost" onClick={onCancel} autoFocus>
-            Cancel
+            {cancelText}
           </button>
           <button className="btn success" onClick={onConfirm}>
-            OK
+            {okText}
           </button>
         </div>
       </div>
@@ -28,6 +38,8 @@ const ConfirmDialog = ({ open, title, subtitle, onCancel, onConfirm }) => {
 /* --------------------------------------------------------- */
 
 const ScreenshotApp = () => {
+  const { t } = useTranslation();
+
   const videoRef = useRef(null);
   const timerRef = useRef(null);
   const samplingRef = useRef(null);
@@ -75,7 +87,7 @@ const ScreenshotApp = () => {
   const API_BASE = process.env.REACT_APP_API_BASE;
 
   // ---- helpers ----
-  const getTaskId = (t) => t?.id ?? t?.task_id ?? t?._id;
+  const getTaskId = (tt) => tt?.id ?? tt?.task_id ?? tt?._id;
   const pad = (n) => String(n).padStart(2, "0");
   const formatTime = (total) => {
     const s = Math.max(0, Math.floor(total || 0));
@@ -220,12 +232,12 @@ const ScreenshotApp = () => {
   // When user changes task (including selecting "none"/default option)
   const handleTaskChange = async (e) => {
     if (blockSelections) {
-      showToast("Let Admin approve previous Payments before");
+      showToast(t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" }));
       return;
     }
 
-    const newId = e.target.value;         // "" (none) or task id
-    const prevId = selectedTaskId;        // old selection
+    const newId = e.target.value; // "" (none) or task id
+    const prevId = selectedTaskId; // old selection
 
     // 1) If there was a previous task selected, reset its flagger to 0
     if (prevId) {
@@ -243,7 +255,7 @@ const ScreenshotApp = () => {
 
     // 3) Normal flow for a real task selection
     setSelectedTaskId(newId);
-    const task = taskData.find((t) => String(getTaskId(t)) === String(newId));
+    const task = taskData.find((tt) => String(getTaskId(tt)) === String(newId));
     setSelectedTaskName(task?.task_name ?? "");
     const baseSeconds = toSeconds(task?.last_timing);
     setElapsedSeconds(baseSeconds);
@@ -276,6 +288,7 @@ const ScreenshotApp = () => {
         fetchProjects();
         fetchUsers();
       });
+
   }, []); // mount only
 
   // 🔁 On refresh / new mount: if we had a previous selected task stored,
@@ -287,6 +300,7 @@ const ScreenshotApp = () => {
       updateTaskFlagger(lastTaskId, 0);
       localStorage.removeItem("selectedTaskId");
     }
+
   }, []); // run once on mount
 
   const fetchTasks = async () => {
@@ -386,6 +400,7 @@ const ScreenshotApp = () => {
       setApprovalStatus(null);
       setApprovalError("");
     }
+
   }, [currUser?.user_id, currUser?.role, currUser?.user_role, currUser?.role_name]);
 
   // video stream + periodic refresh
@@ -434,6 +449,7 @@ const ScreenshotApp = () => {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
+
   }, []); // mount only
 
   // timers/sampling/capture
@@ -470,13 +486,13 @@ const ScreenshotApp = () => {
     if (isFreelancer && currUser?.user_id) {
       const allowed = await fetchApprovalStatus(currUser.user_id);
       if (!allowed) {
-        showToast("Let Admin approve previous Payments before");
+        showToast(t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" }));
         return;
       }
     }
 
     if (!selectedTaskId) {
-      showToast("⚠ Please select a task before starting!");
+      showToast(t("toast.selectTaskFirst", { defaultValue: "⚠ Please select a task before starting!" }));
       return;
     }
     startAtRef.current = new Date();
@@ -493,7 +509,7 @@ const ScreenshotApp = () => {
   // PAUSE (disabled when approval is 1; also guarded)
   const handlePause = () => {
     if (isFreelancer && approvalStatus === 1) {
-      showToast("Let Admin approve previous Payments before");
+      showToast(t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" }));
       return;
     }
 
@@ -517,7 +533,7 @@ const ScreenshotApp = () => {
     if (isFreelancer && currUser?.user_id) {
       const allowed = await fetchApprovalStatus(currUser.user_id);
       if (!allowed) {
-        showToast("Let Admin approve previous Payments before");
+        showToast(t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" }));
         return;
       }
     }
@@ -540,7 +556,7 @@ const ScreenshotApp = () => {
     }
 
     if (segmentsRef.current.length === 0) {
-      showToast("No time captured. Please Start first.");
+      showToast(t("toast.noTimeCaptured", { defaultValue: "No time captured. Please Start first." }));
       return;
     }
 
@@ -551,15 +567,15 @@ const ScreenshotApp = () => {
     stopScreenshotCycle();
 
     const theTask = taskData.find(
-      (t) => String(getTaskId(t)) === String(selectedTaskId)
+      (tt) => String(getTaskId(tt)) === String(selectedTaskId)
     );
     if (!theTask) {
-      showToast("Selected task not found.");
+      showToast(t("toast.taskNotFound", { defaultValue: "Selected task not found." }));
       return;
     }
 
     const developerId = Number(localStorage.getItem("user_id") || 0);
-    const tenant_id = Number(localStorage.getItem("tenant_id") || 0);
+    const tenant_id_local = Number(localStorage.getItem("tenant_id") || 0);
 
     const rows = segmentsRef.current
       .filter((s) => s.startAt && s.endAt && s.endAt > s.startAt)
@@ -570,11 +586,11 @@ const ScreenshotApp = () => {
         work_date: formatDateYMD(seg.startAt),
         task_start: formatDateTime(seg.startAt),
         task_end: formatDateTime(seg.endAt),
-        tenant_id: tenant_id || null,
+        tenant_id: tenant_id_local || null,
       }));
 
     if (rows.length === 0) {
-      showToast("Nothing to submit.");
+      showToast(t("toast.nothingToSubmit", { defaultValue: "Nothing to submit." }));
       return;
     }
 
@@ -589,7 +605,7 @@ const ScreenshotApp = () => {
       });
       const ttData = await ttRes.json();
       if (!ttRes.ok) {
-        showToast(ttData?.error || "Failed to submit time tracking.");
+        showToast(ttData?.error || t("toast.submitFailed", { defaultValue: "Failed to submit time tracking." }));
         setShowFinishConfirm(true);
         return;
       }
@@ -618,12 +634,12 @@ const ScreenshotApp = () => {
       await updateTaskFlagger(selectedTaskId, 0);
       localStorage.removeItem("selectedTaskId");
 
-      showToast("Time tracking saved!");
+      showToast(t("toast.timeSaved", { defaultValue: "Time tracking saved!" }));
       setTimeout(() => window.location.reload(), 1000);
       segmentsRef.current = [];
     } catch (err) {
       console.error("Error submitting time tracking:", err);
-      showToast("Network error submitting time tracking.");
+      showToast(t("toast.submitNetworkError", { defaultValue: "Network error submitting time tracking." }));
     }
   };
 
@@ -639,7 +655,7 @@ const ScreenshotApp = () => {
     if (isCapturing) handlePause();
     if (streamRef.current) {
       try {
-        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current.getTracks().forEach((tt) => tt.stop());
       } catch {}
       streamRef.current = null;
     }
@@ -658,7 +674,7 @@ const ScreenshotApp = () => {
     if (isCapturing) handlePause();
     if (streamRef.current) {
       try {
-        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current.getTracks().forEach((tt) => tt.stop());
       } catch {}
       streamRef.current = null;
     }
@@ -765,24 +781,34 @@ const ScreenshotApp = () => {
 
   const sections = useMemo(
     () => [
-      { key: "dashboard", label: "Dashboard" },
+      {
+        key: "dashboard",
+        label: t("sidebar.dashboard", { defaultValue: "Dashboard" }),
+      },
       {
         key: "tasks",
-        label: "Tasks",
+        label: t("sidebar.tasks", { defaultValue: "Tasks" }),
         children: [
-          { key: "create-task", label: "Create Task", action: "create-task" },
+          {
+            key: "create-task",
+            label: t("sidebar.createTask", { defaultValue: "Create Task" }),
+            action: "create-task",
+          },
         ],
       },
-      { key: "settings", label: "Settings" },
+      {
+        key: "settings",
+        label: t("sidebar.settings", { defaultValue: "Settings" }),
+      },
     ],
-    []
+    [t]
   );
 
   /* ----------------- FILTERED TASKS (Project -> Tasks) ----------------- */
   const filteredTasks = useMemo(() => {
     if (!selectedProjectId) return taskData;
     return taskData.filter(
-      (t) => String(t.project_id) === String(selectedProjectId)
+      (tt) => String(tt.project_id) === String(selectedProjectId)
     );
   }, [taskData, selectedProjectId]);
 
@@ -791,7 +817,7 @@ const ScreenshotApp = () => {
     if (
       selectedTaskId &&
       !filteredTasks.some(
-        (t) => String(getTaskId(t)) === String(selectedTaskId)
+        (tt) => String(getTaskId(tt)) === String(selectedTaskId)
       )
     ) {
       setSelectedTaskId("");
@@ -802,7 +828,7 @@ const ScreenshotApp = () => {
 
   const handleProjectFilterChange = (e) => {
     if (blockSelections) {
-      showToast("Let Admin approve previous Payments before");
+      showToast(t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" }));
       return;
     }
     setSelectedProjectId(e.target.value); // "" means ALL
@@ -838,13 +864,17 @@ const ScreenshotApp = () => {
         </div>
       </div>
 
-      {/* Main content */}
+      {/* Main dashboard area */}
       <main className="app-main">
-        {/* Finish Confirmation */}
+        {/* Confirm dialogs */}
         <ConfirmDialog
           open={showFinishConfirm}
-          title="Task Finished"
-          subtitle="Your task has been completed and saved."
+          title={t("confirm.taskFinished.title", { defaultValue: "Task Finished" })}
+          subtitle={t("confirm.taskFinished.subtitle", {
+            defaultValue: "Your task has been completed and saved.",
+          })}
+          cancelText={t("confirm.cancel", { defaultValue: "Cancel" })}
+          okText={t("confirm.ok", { defaultValue: "OK" })}
           onCancel={() => setShowFinishConfirm(false)}
           onConfirm={() => {
             setShowFinishConfirm(false);
@@ -852,164 +882,287 @@ const ScreenshotApp = () => {
           }}
         />
 
-        {/* Quit Confirmation */}
         <ConfirmDialog
           open={showQuitConfirm}
-          title="Quit session?"
+          title={t("confirm.quit.title", { defaultValue: "Quit session?" })}
           subtitle={
             isCapturing
-              ? "Capture is currently running. We’ll stop it and discard the current cycle."
+              ? t("confirm.quit.subtitleRunning", {
+                  defaultValue:
+                    "Capture is currently running. We’ll stop it and discard the current cycle.",
+                })
               : ""
           }
+          cancelText={t("confirm.cancel", { defaultValue: "Cancel" })}
+          okText={t("confirm.ok", { defaultValue: "OK" })}
           onCancel={cancelQuit}
           onConfirm={confirmQuit}
         />
 
-        {/* Logout Confirmation */}
         <ConfirmDialog
           open={showLogoutConfirm}
-          title="Log out?"
+          title={t("confirm.logout.title", { defaultValue: "Log out?" })}
           subtitle={
             isCapturing
-              ? "Capture is currently running. We’ll stop it before logging out."
+              ? t("confirm.logout.subtitleRunning", {
+                  defaultValue:
+                    "Capture is currently running. We’ll stop it before logging out.",
+                })
               : ""
           }
+          cancelText={t("confirm.cancel", { defaultValue: "Cancel" })}
+          okText={t("confirm.ok", { defaultValue: "OK" })}
           onCancel={cancelLogout}
           onConfirm={confirmLogout}
         />
 
-        {/* ---------------- Project + Task selectors ---------------- */}
-        <div className="select-container">
-          <div
-            className="filter-row"
-            style={{
-              display: "grid",
-              gap: 10,
-              gridTemplateColumns: "1fr 1fr",
-              alignItems: "end",
-            }}
-          >
-            <div className="filter-item">
-              <label>Filter by Project:</label>
-              <select
-                value={selectedProjectId}
-                onChange={handleProjectFilterChange}
-                className="scrollable-select"
-                disabled={
-                  isCapturing ||
-                  isPaused ||
-                  blockSelections ||
-                  approvalLoading
-                }
-              >
-                <option value="">All Projects</option>
-                {projects.map((p) => (
-                  <option key={p.project_id} value={p.project_id}>
-                    {p.project_name}
-                  </option>
-                ))}
-              </select>
+        {/* ---------- TOP BAR / HEADER ---------- */}
+        <header className="dashboard-header">
+          <div className="dh-left">
+            <h1 className="app-title">
+              {t("dashboard.title", { defaultValue: "Time Capture Dashboard" })}
+            </h1>
+            <p className="app-subtitle">
+              {t("dashboard.subtitle", {
+                defaultValue:
+                  "Track your work time with automatic screenshots and smart approvals.",
+              })}
+            </p>
+          </div>
+          <div className="dh-right">
+            <LanguageSwitcher className="dh-lang" />
+            <div className="user-pill">
+              <div className="user-avatar">
+                {(user_name || "U").charAt(0).toUpperCase()}
+              </div>
+              <div className="user-meta">
+                <span className="user-name">
+                  {user_name || t("dashboard.userFallback", { defaultValue: "User" })}
+                </span>
+                <span className="user-role">
+                  {getRoleLower() || t("dashboard.roleFallback", { defaultValue: "Team Member" })}
+                </span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* ---------- MAIN GRID ---------- */}
+        <section className="dashboard-grid">
+          {/* LEFT COLUMN: filters + controls */}
+          <div className="dg-left">
+            <div className="summary-row">
+              <div className="summary-card">
+                <span className="summary-label">
+                  {t("dashboard.summary.status.label", { defaultValue: "Current Status" })}
+                </span>
+                <span className="summary-value status-running">
+                  {isCapturing
+                    ? t("dashboard.summary.status.recording", { defaultValue: "Recording" })
+                    : isPaused
+                    ? t("dashboard.summary.status.paused", { defaultValue: "Paused" })
+                    : t("dashboard.summary.status.idle", { defaultValue: "Idle" })}
+                </span>
+                <span className="summary-sub">
+                  {t("dashboard.summary.status.sub", {
+                    defaultValue: "Live capture with idle detection",
+                  })}
+                </span>
+              </div>
+
+              <div className="summary-card">
+                <span className="summary-label">
+                  {t("dashboard.summary.today.label", { defaultValue: "Today's Time" })}
+                </span>
+                <span className="summary-value">{formatTime(elapsedSeconds)}</span>
+                <span className="summary-sub">
+                  {t("dashboard.summary.today.sub", { defaultValue: "Session duration" })}
+                </span>
+              </div>
             </div>
 
-            <div className="filter-item">
-              <label>Choose Your Task:</label>
-              <select
-                value={selectedTaskId}
-                onChange={handleTaskChange}
-                className="scrollable-select"
-                disabled={
-                  isCapturing ||
-                  isPaused ||
-                  blockSelections ||
-                  approvalLoading
-                }
-              >
-                {/* NOTE: now this is selectable (not disabled) and value="" means "none" */}
-                <option value="">
-                  {filteredTasks.length ? "Select Task" : "No tasks available"}
-                </option>
-                {filteredTasks.map((task) => {
-                  const tid = getTaskId(task);
-                  return (
-                    <option key={tid} value={tid}>
-                      {task.task_name}
-                    </option>
-                  );
-                })}
-              </select>
+            {/* Filters card */}
+            <div className="card card-filters">
+              <div className="card-header">
+                <h2 className="card-title">
+                  {t("dashboard.workContext.title", { defaultValue: "Work Context" })}
+                </h2>
+                <span className="card-tag">
+                  {t("dashboard.workContext.tag", { defaultValue: "Live" })}
+                </span>
+              </div>
+
+              <div className="card-body">
+                <div className="filter-grid">
+                  <div className="filter-item">
+                    <label className="filter-label">
+                      {t("dashboard.workContext.filterProject.label", {
+                        defaultValue: "Filter by Project",
+                      })}
+                    </label>
+                    <select
+                      value={selectedProjectId}
+                      onChange={handleProjectFilterChange}
+                      className="scrollable-select"
+                      disabled={
+                        isCapturing || isPaused || blockSelections || approvalLoading
+                      }
+                    >
+                      <option value="">
+                        {t("dashboard.workContext.filterProject.all", {
+                          defaultValue: "All Projects",
+                        })}
+                      </option>
+                      {projects.map((p) => (
+                        <option key={p.project_id} value={p.project_id}>
+                          {p.project_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="filter-item">
+                    <label className="filter-label">
+                      {t("dashboard.workContext.task.label", {
+                        defaultValue: "Choose Your Task",
+                      })}
+                    </label>
+                    <select
+                      value={selectedTaskId}
+                      onChange={handleTaskChange}
+                      className="scrollable-select"
+                      disabled={
+                        isCapturing || isPaused || blockSelections || approvalLoading
+                      }
+                    >
+                      <option value="">
+                        {filteredTasks.length
+                          ? t("dashboard.workContext.task.select", { defaultValue: "Select Task" })
+                          : t("dashboard.workContext.task.none", { defaultValue: "No tasks available" })}
+                      </option>
+                      {filteredTasks.map((task) => {
+                        const tid = getTaskId(task);
+                        return (
+                          <option key={tid} value={tid}>
+                            {task.task_name}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                </div>
+
+                {isFreelancer && approvalStatus === 1 && (
+                  <p className="selection-warning" role="alert">
+                    {t("dashboard.workContext.warning", {
+                      defaultValue: "Let Admin approve previous Payments before",
+                    })}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Controls card */}
+            <div className="card card-controls">
+              <div className="card-header">
+                <h2 className="card-title">
+                  {t("dashboard.controls.title", { defaultValue: "Session Controls" })}
+                </h2>
+              </div>
+              <div className="card-body">
+                <div className="btn-row">
+                  {!isCapturing && !isPaused && (
+                    <button
+                      id="screenshotBtn"
+                      className="btn-primary"
+                      onClick={handleStart}
+                      disabled={approvalLoading}
+                      title={
+                        isFreelancer && approvalStatus === 1
+                          ? t("dashboard.controls.startTitleRecheck", {
+                              defaultValue: "We’ll re-check approval when you click Start",
+                            })
+                          : ""
+                      }
+                    >
+                      {t("dashboard.controls.start", { defaultValue: "Start Recording" })}
+                    </button>
+                  )}
+
+                  <button
+                    id="stopBtn"
+                    className="btn-warning"
+                    onClick={isPaused ? handleResume : handlePause}
+                    disabled={
+                      (!isPaused && isFreelancer && approvalStatus === 1) || false
+                    }
+                    title={
+                      !isPaused && isFreelancer && approvalStatus === 1
+                        ? t("dashboard.controls.pauseTitleBlock", {
+                            defaultValue: "Claim previous Payments before",
+                          })
+                        : ""
+                    }
+                  >
+                    {isPaused
+                      ? t("dashboard.controls.resume", { defaultValue: "Resume" })
+                      : t("dashboard.controls.pause", { defaultValue: "Pause" })}
+                  </button>
+
+                  <button
+                    id="finishBtn"
+                    className="btn-success"
+                    onClick={handleFinish}
+                  >
+                    {t("dashboard.controls.submit", { defaultValue: "Submit Task" })}
+                  </button>
+                </div>
+
+                <div className="timer-chip">
+                  <span className="timer-label">
+                    {t("dashboard.controls.captureDuration", {
+                      defaultValue: "Capture Duration",
+                    })}
+                  </span>
+                  <span className="timer-value">{formatTime(elapsedSeconds)}</span>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Full-width warning BELOW both selects when blocked */}
-          {isFreelancer && approvalStatus === 1 && (
-            <p className="selection-warning" role="alert">
-              Let Admin approve previous Payments before
-            </p>
-          )}
-        </div>
+          {/* RIGHT COLUMN: live preview */}
+          <div className="dg-right">
+            <div className="card card-preview">
+              <div className="card-header">
+                <h2 className="card-title">
+                  {t("dashboard.preview.title", { defaultValue: "Live Screen Preview" })}
+                </h2>
+                <span className="card-subtitle">
+                  {t("dashboard.preview.subtitle", {
+                    defaultValue:
+                      "Screenshots are taken automatically when you're active.",
+                  })}
+                </span>
+              </div>
+              <div className="card-body preview-body">
+                <video id="video" ref={videoRef}></video>
+              </div>
+            </div>
+          </div>
+        </section>
 
-        {/* ----------------------------------------------------------- */}
-
-        <video id="video" ref={videoRef}></video>
-
-        <div className="btn-row">
-          {!isCapturing && !isPaused && (
-            <button
-              id="screenshotBtn"
-              className="button is-success"
-              onClick={handleStart}
-              disabled={approvalLoading} // Start is live-checked on click; not hard-disabled by status
-              title={
-                isFreelancer && approvalStatus === 1
-                  ? "We’ll re-check approval when you click Start"
-                  : ""
-              }
-            >
-              Start
-            </button>
-          )}
-          <button
-            id="stopBtn"
-            className="button is-danger"
-            onClick={isPaused ? handleResume : handlePause}
-            disabled={
-              (!isPaused && isFreelancer && approvalStatus === 1) || false
-            }
-            title={
-              !isPaused && isFreelancer && approvalStatus === 1
-                ? "Claim previous Payments before"
-                : ""
-            }
-          >
-            {isPaused ? "Pause" : "Pause"}
-          </button>
-
-          <button
-            id="finishBtn"
-            className="button is-danger"
-            onClick={handleFinish}
-          >
-            Submit Task
-          </button>
-        </div>
-
-        <div className="timer">
-          <strong>Capture Duration:</strong>{" "}
-          <span id="timer">{formatTime(elapsedSeconds)}</span>
-        </div>
+        {/* Add Task Modal */}
+        <AddTaskModal
+          open={addTaskOpen}
+          onClose={(didSave) => {
+            setAddTaskOpen(false);
+            if (didSave) fetchTasks();
+          }}
+          projects={projects}
+          curruser={currUser}
+          allusers={allUsers}
+        />
       </main>
-
-      {/* Add Task-1 Modal */}
-      <AddTaskModal
-        open={addTaskOpen}
-        onClose={(didSave) => {
-          setAddTaskOpen(false);
-          if (didSave) fetchTasks();
-        }}
-        projects={projects}
-        curruser={currUser}
-        allusers={allUsers}
-      />
     </div>
   );
 };
