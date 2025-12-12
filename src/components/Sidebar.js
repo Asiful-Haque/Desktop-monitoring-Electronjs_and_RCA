@@ -1,7 +1,5 @@
-
-
-
 import React, { useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import "./sidebar.css";
 
 const Sidebar = ({
@@ -11,6 +9,8 @@ const Sidebar = ({
   activeKey = "",
   onSelect = () => {},
 }) => {
+  const { t } = useTranslation();
+
   // track open/closed menus by section key
   const [open, setOpen] = useState({});
 
@@ -29,16 +29,18 @@ const Sidebar = ({
   const handleChildClick = (parentKey, child) => {
     if (child.action === "create-task") {
       onCreateTask?.();
-      // ensure parent looks selected
       onSelect?.(parentKey);
     } else {
       onSelect?.(child.key);
     }
   };
 
+  // Translate section label if a "labelKey" exists, otherwise fallback label
+  const getLabel = (item) => (item?.labelKey ? t(item.labelKey) : item?.label);
+
   return (
     <aside className="app-sidebar">
-      <div className="sb-brand">Task Pro !!</div>
+      <div className="sb-brand">{t("sidebar.brand")}</div>
 
       <nav className="sb-nav">
         {sections.map((sec) => {
@@ -55,7 +57,7 @@ const Sidebar = ({
                 aria-controls={hasKids ? `subnav-${sec.key}` : undefined}
               >
                 {sec.icon ? <span className="sb-ic">{sec.icon}</span> : null}
-                <span className="sb-label">{sec.label}</span>
+                <span className="sb-label">{getLabel(sec)}</span>
                 {hasKids ? (
                   <span className={`sb-caret ${isOpen ? "open" : ""}`} aria-hidden>
                     ▸
@@ -68,7 +70,7 @@ const Sidebar = ({
                   id={`subnav-${sec.key}`}
                   className={`sb-subnav ${isOpen ? "open" : ""}`}
                   role="region"
-                  aria-label={`${sec.label} submenu`}
+                  aria-label={t("sidebar.submenuAria", { label: getLabel(sec) })}
                 >
                   {sec.children.map((child) => (
                     <button
@@ -77,7 +79,7 @@ const Sidebar = ({
                       onClick={() => handleChildClick(sec.key, child)}
                     >
                       {child.icon ? <span className="sb-ic">{child.icon}</span> : null}
-                      <span>{child.label}</span>
+                      <span>{getLabel(child)}</span>
                     </button>
                   ))}
                 </div>
@@ -89,7 +91,7 @@ const Sidebar = ({
 
       <div className="sb-actions">
         <button className="btn wfull ghost" onClick={onLogout}>
-          Logout
+          {t("sidebar.logout")}
         </button>
       </div>
     </aside>

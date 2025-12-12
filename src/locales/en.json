@@ -108,5 +108,60 @@
     "submitFailed": "Failed to submit time tracking.",
     "timeSaved": "Time tracking saved!",
     "submitNetworkError": "Network error submitting time tracking."
+  },
+    "sidebar": {
+    "brand": "Task Pro !!",
+    "dashboard": "Dashboard",
+    "tasks": "Tasks",
+    "createTask": "Create Task",
+    "settings": "Settings",
+    "logout": "Logout",
+    "submenuAria": "{{label}} submenu"
+  },
+    "common": {
+    "cancel": "Cancel"
+  },
+  "addTask": {
+    "title": "Add New Task",
+    "subtitle": "Create a new task for your project",
+    "close": "Close",
+    "fields": {
+      "taskName": "Task Name",
+      "description": "Description",
+      "assignedTo": "Assigned To",
+      "timezone": "Timezone",
+      "startDate": "Start Date",
+      "deadline": "Deadline",
+      "status": "Status",
+      "project": "Project",
+      "priority": "Priority"
+    },
+    "placeholders": {
+      "taskName": "Enter task name",
+      "description": "Enter task description",
+      "selectUser": "Select user",
+      "selectStatus": "Select status",
+      "selectProject": "Select project",
+      "selectPriority": "Select priority"
+    },
+    "actions": {
+      "addTask": "Add Task"
+    },
+    "status": {
+      "in_progress": "In Progress",
+      "completed": "Completed"
+    },
+    "priority": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "toast": {
+      "fillAll": "Please fill in all fields.",
+      "createFailed": "Failed to create task",
+      "networkError": "Network error",
+      "created": "Task \"{{name}}\" created"
+    }
   }
+
 }

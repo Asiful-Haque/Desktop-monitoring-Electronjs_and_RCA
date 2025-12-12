@@ -39,12 +39,10 @@ const ConfirmDialog = ({
 
 const ScreenshotApp = () => {
   const { t } = useTranslation();
-
   const videoRef = useRef(null);
   const timerRef = useRef(null);
   const samplingRef = useRef(null);
-  const captureIntervalRef = useRef(null);
-
+  const captureIntervalRef = useRef(null); 
   const [isCapturing, setIsCapturing] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -57,7 +55,6 @@ const ScreenshotApp = () => {
   const [selectedProjectId, setSelectedProjectId] = useState(""); // "" = All projects
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [selectedTaskName, setSelectedTaskName] = useState("");
-
   const [token, setToken] = useState(null);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
@@ -76,19 +73,44 @@ const ScreenshotApp = () => {
   const startAtRef = useRef(null);
   const segmentsRef = useRef([]);
 
-  // idle + capture
+  // idle + capture sampling
   const idleSecondsThisCycleRef = useRef(0);
   const secondsSampledRef = useRef(0);
   const streamRef = useRef(null);
+
+  // 🔥 full-session idle/active + continuous idle tracking
+  const totalIdleSecondsRef = useRef(0);
+  const totalActiveSecondsRef = useRef(0);
+  const continuousIdleSecondsRef = useRef(0);
+  const isCapturingRef = useRef(false);
+
+  // idle warning popup
+  const [idleWarningOpen, setIdleWarningOpen] = useState(false);
+  const [idleWarningSeconds, setIdleWarningSeconds] = useState(0);
+  const [hasResetIdleTimer, setHasResetIdleTimer] = useState(true);
+
+
+  // random screenshot scheduling
+  const screenshotTimeoutsRef = useRef([]);
+  const screenshotBlockIntervalRef = useRef(null);
 
   const user_id = localStorage.getItem("user_id");
   const user_name = localStorage.getItem("user_name");
   const tenant_id = localStorage.getItem("tenant_id");
   const API_BASE = process.env.REACT_APP_API_BASE;
 
+  // Store the total elapsed time globally in a ref (avoiding reset)
+  const totalElapsedTimeRef = useRef(0);
+
+  // keep isCapturing in a ref for setTimeout / setInterval logic
+  useEffect(() => {
+    isCapturingRef.current = isCapturing;
+  }, [isCapturing]);
+
   // ---- helpers ----
   const getTaskId = (tt) => tt?.id ?? tt?.task_id ?? tt?._id;
   const pad = (n) => String(n).padStart(2, "0");
+
   const formatTime = (total) => {
     const s = Math.max(0, Math.floor(total || 0));
     const hh = pad(Math.floor(s / 3600));
@@ -96,21 +118,43 @@ const ScreenshotApp = () => {
     const ss = pad(s % 60);
     return `${hh}:${mm}:${ss}`;
   };
+
   const toSeconds = (val) => {
     if (val === null || val === undefined) return 0;
     const n = parseInt(String(val).trim(), 10);
     return Number.isFinite(n) ? Math.max(0, n) : 0;
   };
+
+  // Local date (recommended for "work_date" / timesheets)
   const formatDateYMD = (d) => {
     const dt = d instanceof Date ? d : new Date(d);
-    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(
+      dt.getDate()
+    )}`;
   };
+
   const formatDateTime = (d) => {
     const dt = d instanceof Date ? d : new Date(d);
     return `${formatDateYMD(dt)} ${pad(dt.getHours())}:${pad(
       dt.getMinutes()
     )}:${pad(dt.getSeconds())}`;
   };
+
+  // ✅ ISO UTC (unambiguous) for database/API
+  const toIso = (d) => (d instanceof Date ? d : new Date(d)).toISOString();
+
+  // ✅ If backend doesn't like milliseconds, use this
+  const toIsoNoMs = (d) =>
+    (d instanceof Date ? d : new Date(d))
+      .toISOString()
+      .replace(/\.\d{3}Z$/, "Z");
+
+  const getUserTz = () =>
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+  // NOTE: JS returns minutes to add to local time to get UTC
+  // Dhaka => -360
+  const getUserOffsetMinutes = () => new Date().getTimezoneOffset();
 
   // ========= FREELANCER APPROVAL STATE =========
   const [approvalStatus, setApprovalStatus] = useState(null); // 0,1,2
@@ -232,7 +276,11 @@ const ScreenshotApp = () => {
   // When user changes task (including selecting "none"/default option)
   const handleTaskChange = async (e) => {
     if (blockSelections) {
-      showToast(t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" }));
+      showToast(
+        t("toast.approvalBlock", {
+          defaultValue: "Let Admin approve previous Payments before",
+        })
+      );
       return;
     }
 
@@ -288,19 +336,28 @@ const ScreenshotApp = () => {
         fetchProjects();
         fetchUsers();
       });
-
   }, []); // mount only
 
   // 🔁 On refresh / new mount: if we had a previous selected task stored,
   // reset its flagger to 0 and clear the stored key.
+
+  useEffect(() => {
+  if (idleWarningOpen) {
+    // Make sure timer is not affected by the modal
+    startTimer();  // Reaffirm that the timer continues
+  }
+}, [idleWarningOpen]);
+
   useEffect(() => {
     const lastTaskId = localStorage.getItem("selectedTaskId");
     if (lastTaskId) {
-      console.log("[Flagger] Resetting last selected task on mount:", lastTaskId);
+      console.log(
+        "[Flagger] Resetting last selected task on mount:",
+        lastTaskId
+      );
       updateTaskFlagger(lastTaskId, 0);
       localStorage.removeItem("selectedTaskId");
     }
-
   }, []); // run once on mount
 
   const fetchTasks = async () => {
@@ -313,7 +370,7 @@ const ScreenshotApp = () => {
       if (!response.ok) throw new Error("Network response was not ok");
       const data = await response.json();
       const filteredTasks = Array.isArray(data?.tasks)
-        ? data.tasks.filter((task) => task.status !== "completed")
+        ? data.tasks.filter((task) => task.status !== "completed" && task.status !== "pending")
         : [];
       setTaskData(filteredTasks);
     } catch (error) {
@@ -365,10 +422,14 @@ const ScreenshotApp = () => {
           console.log("Dats users ", data?.users);
           setCurrUser(me);
 
-          const resolvedRole =
-            (me?.role || me?.user_role || me?.role_name || "")
-              .toString()
-              .trim();
+          const resolvedRole = (
+            me?.role ||
+            me?.user_role ||
+            me?.role_name ||
+            ""
+          )
+            .toString()
+            .trim();
           if (resolvedRole) {
             localStorage.setItem("user_role", resolvedRole);
           }
@@ -400,8 +461,12 @@ const ScreenshotApp = () => {
       setApprovalStatus(null);
       setApprovalError("");
     }
-
-  }, [currUser?.user_id, currUser?.role, currUser?.user_role, currUser?.role_name]);
+  }, [
+    currUser?.user_id,
+    currUser?.role,
+    currUser?.user_role,
+    currUser?.role_name,
+  ]);
 
   // video stream + periodic refresh
   useEffect(() => {
@@ -445,40 +510,116 @@ const ScreenshotApp = () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (samplingRef.current) clearInterval(samplingRef.current);
       if (captureIntervalRef.current) clearInterval(captureIntervalRef.current);
+      // stop new screenshot scheduler + sampling
+      stopSampling();
+      stopScreenshotCycle();
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
-
   }, []); // mount only
 
   // timers/sampling/capture
-  const startTimer = () => {
-    timerRef.current = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
-    }, 1000);
-  };
+const startTimer = () => {
+  if (timerRef.current) return; // Prevent restarting if already running
+  timerRef.current = setInterval(() => {
+    setElapsedSeconds((prev) => prev + 1);
+  }, 1000);
+};
   const stopTimer = () => clearInterval(timerRef.current);
 
-  const startSampling = () => {
-    samplingRef.current = setInterval(async () => {
-      const idle = await window.electronAPI.getIdleTime();
-      if (idle >= 1) idleSecondsThisCycleRef.current++;
-      secondsSampledRef.current++;
-    }, 1000);
-  };
+  // 🔥 sampling: full-session idle/active + continuous idle + popup timer
+const startSampling = () => {
+  samplingRef.current = setInterval(async () => {
+    const idle = await window.electronAPI.getIdleTime(); // seconds since last input
+    const isIdle = idle >= 1;
+    secondsSampledRef.current++;
+    if (isIdle) {
+      idleSecondsThisCycleRef.current++;
+      totalIdleSecondsRef.current++;
+      continuousIdleSecondsRef.current++;
+      console.log(`Idle detected for ${continuousIdleSecondsRef.current} seconds`);
+      setIdleWarningSeconds(continuousIdleSecondsRef.current);
+      console.log(`Idle warning seconds updated: ${continuousIdleSecondsRef.current}`);
+      if (
+        !idleWarningOpen &&
+        continuousIdleSecondsRef.current >= 1 * 10
+      ) {
+        console.log("Opening idle warning dialog");
+        setIdleWarningOpen(true);
+      }
+    } else {
+      if (!hasResetIdleTimer) {
+        console.log("User activity detected. Idle timer reset.");
+        totalActiveSecondsRef.current++;
+        continuousIdleSecondsRef.current = 0;
+      } else {
+        console.log("User activity detected, but idle timer will not reset until OK is clicked.");
+      }
+    }
+  }, 1000); 
+};
+
   const stopSampling = () => {
     clearInterval(samplingRef.current);
+    samplingRef.current = null;
     idleSecondsThisCycleRef.current = 0;
     secondsSampledRef.current = 0;
+    continuousIdleSecondsRef.current = 0;
+    // keep totalIdleSecondsRef & totalActiveSecondsRef (session totals)
+  };
+
+  // 🔥 Random screenshots: 5 per 10-minute block
+  const scheduleRandomScreenshotsBlock = () => {
+    const blockMs = 10 * 60 * 1000; // 10 minutes
+    const numShots = 5;
+    const minGapMs = 30 * 1000; // at least 30s apart (optional)
+
+    const offsets = [];
+
+    for (let i = 0; i < numShots; i++) {
+      let offset;
+      let tries = 0;
+
+      do {
+        offset = Math.floor(Math.random() * blockMs);
+        tries++;
+      } while (
+        offsets.some((o) => Math.abs(o - offset) < minGapMs) &&
+        tries < 20
+      );
+
+      offsets.push(offset);
+    }
+
+    offsets.forEach((offset) => {
+      const timeoutId = setTimeout(() => {
+        if (!isCapturingRef.current) return;
+        evaluateAndCapture();
+      }, offset);
+      screenshotTimeoutsRef.current.push(timeoutId);
+    });
   };
 
   const startScreenshotCycle = () => {
-    captureIntervalRef.current = setInterval(() => {
-      evaluateAndCapture();
-    }, 30 * 1000);
+    // first 10-minute block
+    scheduleRandomScreenshotsBlock();
+
+    // every 10 minutes, schedule new random block
+    screenshotBlockIntervalRef.current = setInterval(() => {
+      if (!isCapturingRef.current) return;
+      scheduleRandomScreenshotsBlock();
+    }, 10 * 60 * 1000);
   };
-  const stopScreenshotCycle = () => clearInterval(captureIntervalRef.current);
+
+  const stopScreenshotCycle = () => {
+    if (screenshotBlockIntervalRef.current) {
+      clearInterval(screenshotBlockIntervalRef.current);
+      screenshotBlockIntervalRef.current = null;
+    }
+    screenshotTimeoutsRef.current.forEach((id) => clearTimeout(id));
+    screenshotTimeoutsRef.current = [];
+  };
 
   // === LIVE CHECK on Start ===
   const handleStart = async () => {
@@ -486,16 +627,31 @@ const ScreenshotApp = () => {
     if (isFreelancer && currUser?.user_id) {
       const allowed = await fetchApprovalStatus(currUser.user_id);
       if (!allowed) {
-        showToast(t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" }));
+        showToast(
+          t("toast.approvalBlock", {
+            defaultValue: "Let Admin approve previous Payments before",
+          })
+        );
         return;
       }
     }
 
     if (!selectedTaskId) {
-      showToast(t("toast.selectTaskFirst", { defaultValue: "⚠ Please select a task before starting!" }));
+      showToast(
+        t("toast.selectTaskFirst", {
+          defaultValue: "⚠ Please select a task before starting!",
+        })
+      );
       return;
     }
     startAtRef.current = new Date();
+
+    // reset full-session counters
+    totalIdleSecondsRef.current = 0;
+    totalActiveSecondsRef.current = 0;
+    continuousIdleSecondsRef.current = 0;
+    setIdleWarningSeconds(0);
+    setIdleWarningOpen(false);
 
     if (!isCapturing) {
       setIsCapturing(true);
@@ -506,10 +662,14 @@ const ScreenshotApp = () => {
     }
   };
 
-  // PAUSE (disabled when approval is 1; also guarded)
+  // PAUSE
   const handlePause = () => {
     if (isFreelancer && approvalStatus === 1) {
-      showToast(t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" }));
+      showToast(
+        t("toast.approvalBlock", {
+          defaultValue: "Let Admin approve previous Payments before",
+        })
+      );
       return;
     }
 
@@ -533,7 +693,11 @@ const ScreenshotApp = () => {
     if (isFreelancer && currUser?.user_id) {
       const allowed = await fetchApprovalStatus(currUser.user_id);
       if (!allowed) {
-        showToast(t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" }));
+        showToast(
+          t("toast.approvalBlock", {
+            defaultValue: "Let Admin approve previous Payments before",
+          })
+        );
         return;
       }
     }
@@ -556,7 +720,11 @@ const ScreenshotApp = () => {
     }
 
     if (segmentsRef.current.length === 0) {
-      showToast(t("toast.noTimeCaptured", { defaultValue: "No time captured. Please Start first." }));
+      showToast(
+        t("toast.noTimeCaptured", {
+          defaultValue: "No time captured. Please Start first.",
+        })
+      );
       return;
     }
 
@@ -570,12 +738,25 @@ const ScreenshotApp = () => {
       (tt) => String(getTaskId(tt)) === String(selectedTaskId)
     );
     if (!theTask) {
-      showToast(t("toast.taskNotFound", { defaultValue: "Selected task not found." }));
+      showToast(
+        t("toast.taskNotFound", { defaultValue: "Selected task not found." })
+      );
       return;
     }
 
     const developerId = Number(localStorage.getItem("user_id") || 0);
     const tenant_id_local = Number(localStorage.getItem("tenant_id") || 0);
+
+    const user_tz = getUserTz();
+    const user_offset_minutes = getUserOffsetMinutes();
+
+    // (optional) log full-session idle/active
+    console.log(
+      "[SessionTotals] idle:",
+      totalIdleSecondsRef.current,
+      "active:",
+      totalActiveSecondsRef.current
+    );
 
     const rows = segmentsRef.current
       .filter((s) => s.startAt && s.endAt && s.endAt > s.startAt)
@@ -583,14 +764,27 @@ const ScreenshotApp = () => {
         task_id: Number(getTaskId(theTask)),
         project_id: Number(theTask.project_id),
         developer_id: developerId || null,
+
+        // ✅ timesheet date in user's local date
         work_date: formatDateYMD(seg.startAt),
-        task_start: formatDateTime(seg.startAt),
-        task_end: formatDateTime(seg.endAt),
+
+        // ✅ send UTC ISO with "Z" (unambiguous)
+        task_start: toIsoNoMs(seg.startAt),
+        task_end: toIsoNoMs(seg.endAt),
+
         tenant_id: tenant_id_local || null,
+        user_tz,
+        user_offset_minutes,
+
+        // you *could* also send these if you extend the backend:
+        // total_idle_seconds: totalIdleSecondsRef.current,
+        // total_active_seconds: totalActiveSecondsRef.current,
       }));
 
     if (rows.length === 0) {
-      showToast(t("toast.nothingToSubmit", { defaultValue: "Nothing to submit." }));
+      showToast(
+        t("toast.nothingToSubmit", { defaultValue: "Nothing to submit." })
+      );
       return;
     }
 
@@ -605,7 +799,12 @@ const ScreenshotApp = () => {
       });
       const ttData = await ttRes.json();
       if (!ttRes.ok) {
-        showToast(ttData?.error || t("toast.submitFailed", { defaultValue: "Failed to submit time tracking." }));
+        showToast(
+          ttData?.error ||
+            t("toast.submitFailed", {
+              defaultValue: "Failed to submit time tracking.",
+            })
+        );
         setShowFinishConfirm(true);
         return;
       }
@@ -639,7 +838,11 @@ const ScreenshotApp = () => {
       segmentsRef.current = [];
     } catch (err) {
       console.error("Error submitting time tracking:", err);
-      showToast(t("toast.submitNetworkError", { defaultValue: "Network error submitting time tracking." }));
+      showToast(
+        t("toast.submitNetworkError", {
+          defaultValue: "Network error submitting time tracking.",
+        })
+      );
     }
   };
 
@@ -682,34 +885,41 @@ const ScreenshotApp = () => {
   };
   const cancelLogout = () => setShowLogoutConfirm(false);
 
-  // capture sampling
+  // capture sampling (now called at random times)
   const evaluateAndCapture = async () => {
     const timestamp = new Date().toLocaleTimeString();
-    const idle = idleSecondsThisCycleRef.current;
-    const active = 30 - idle;
 
-    if (active >= 15) {
-      const ssResult = await takeScreenshot();
-      if (ssResult?.success) {
-        try {
-          const dataToSend = {
-            screenshotPath: ssResult.path,
-            task_id: selectedTaskId,
-            timestamp,
-            idleSeconds: idle,
-            activeSeconds: active,
-          };
-          await fetch(`${API_BASE}/api/screenshot-data`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify(dataToSend),
-          });
-        } catch (err) {
-          console.error("❌ Error posting screenshot data:", err);
-        }
+    const idle = idleSecondsThisCycleRef.current;
+    const sampled = secondsSampledRef.current || 0;
+    const active = Math.max(0, sampled - idle);
+
+    if (sampled === 0) {
+      // nothing sampled yet
+      return;
+    }
+
+    const ssResult = await takeScreenshot();
+    if (ssResult?.success) {
+      try {
+        const dataToSend = {
+          screenshotPath: ssResult.path,
+          task_id: selectedTaskId,
+          timestamp,
+          idleSeconds: idle,
+          activeSeconds: active,
+        };
+        await fetch(`${API_BASE}/api/screenshot-data`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(dataToSend),
+        });
+      } catch (err) {
+        console.error("❌ Error posting screenshot data:", err);
       }
     }
+
+    // reset per-block counters after each capture
     idleSecondsThisCycleRef.current = 0;
     secondsSampledRef.current = 0;
   };
@@ -781,27 +991,21 @@ const ScreenshotApp = () => {
 
   const sections = useMemo(
     () => [
-      {
-        key: "dashboard",
-        label: t("sidebar.dashboard", { defaultValue: "Dashboard" }),
-      },
+      { key: "dashboard", labelKey: "sidebar.dashboard" },
       {
         key: "tasks",
-        label: t("sidebar.tasks", { defaultValue: "Tasks" }),
+        labelKey: "sidebar.tasks",
         children: [
           {
             key: "create-task",
-            label: t("sidebar.createTask", { defaultValue: "Create Task" }),
+            labelKey: "sidebar.createTask",
             action: "create-task",
           },
         ],
       },
-      {
-        key: "settings",
-        label: t("sidebar.settings", { defaultValue: "Settings" }),
-      },
+      { key: "settings", labelKey: "sidebar.settings" },
     ],
-    [t]
+    []
   );
 
   /* ----------------- FILTERED TASKS (Project -> Tasks) ----------------- */
@@ -828,11 +1032,30 @@ const ScreenshotApp = () => {
 
   const handleProjectFilterChange = (e) => {
     if (blockSelections) {
-      showToast(t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" }));
+      showToast(
+        t("toast.approvalBlock", {
+          defaultValue: "Let Admin approve previous Payments before",
+        })
+      );
       return;
     }
     setSelectedProjectId(e.target.value); // "" means ALL
   };
+
+  // ===== Idle Warning Dialog actions =====
+const handleIdleDialogConfirm = () => {
+  console.log("Idle warning dialog confirmed");
+  // Reset the flag to allow the timer to reset again after user confirms
+  setHasResetIdleTimer(false);
+  // Reset the idle warning time
+  continuousIdleSecondsRef.current = 0;
+  setIdleWarningSeconds(0);
+  setIdleWarningOpen(false);  // Close the modal
+  // Resetting idle timer should only happen once
+  console.log("Idle warning timer reset to 0.");
+};
+
+
 
   return (
     <div className="app-shell">
@@ -869,7 +1092,9 @@ const ScreenshotApp = () => {
         {/* Confirm dialogs */}
         <ConfirmDialog
           open={showFinishConfirm}
-          title={t("confirm.taskFinished.title", { defaultValue: "Task Finished" })}
+          title={t("confirm.taskFinished.title", {
+            defaultValue: "Task Finished",
+          })}
           subtitle={t("confirm.taskFinished.subtitle", {
             defaultValue: "Your task has been completed and saved.",
           })}
@@ -916,6 +1141,21 @@ const ScreenshotApp = () => {
           onConfirm={confirmLogout}
         />
 
+        {/* 🔥 Idle warning dialog with growing timer */}
+        <ConfirmDialog
+          open={idleWarningOpen}
+          title={t("idle.title", { defaultValue: "You are idle" })}
+          subtitle={t("idle.subtitle", {
+            defaultValue: `You have been idle for ${formatTime(
+              idleWarningSeconds
+            )}.`,
+          })}
+          cancelText={t("confirm.cancel", { defaultValue: "Cancel" })}
+          okText={t("confirm.ok", { defaultValue: "OK" })}
+          onCancel={handleIdleDialogConfirm}
+          onConfirm={handleIdleDialogConfirm}
+        />
+
         {/* ---------- TOP BAR / HEADER ---------- */}
         <header className="dashboard-header">
           <div className="dh-left">
@@ -937,10 +1177,14 @@ const ScreenshotApp = () => {
               </div>
               <div className="user-meta">
                 <span className="user-name">
-                  {user_name || t("dashboard.userFallback", { defaultValue: "User" })}
+                  {user_name ||
+                    t("dashboard.userFallback", { defaultValue: "User" })}
                 </span>
                 <span className="user-role">
-                  {getRoleLower() || t("dashboard.roleFallback", { defaultValue: "Team Member" })}
+                  {getRoleLower() ||
+                    t("dashboard.roleFallback", {
+                      defaultValue: "Team Member",
+                    })}
                 </span>
               </div>
             </div>
@@ -954,14 +1198,22 @@ const ScreenshotApp = () => {
             <div className="summary-row">
               <div className="summary-card">
                 <span className="summary-label">
-                  {t("dashboard.summary.status.label", { defaultValue: "Current Status" })}
+                  {t("dashboard.summary.status.label", {
+                    defaultValue: "Current Status",
+                  })}
                 </span>
                 <span className="summary-value status-running">
                   {isCapturing
-                    ? t("dashboard.summary.status.recording", { defaultValue: "Recording" })
+                    ? t("dashboard.summary.status.recording", {
+                        defaultValue: "Recording",
+                      })
                     : isPaused
-                    ? t("dashboard.summary.status.paused", { defaultValue: "Paused" })
-                    : t("dashboard.summary.status.idle", { defaultValue: "Idle" })}
+                    ? t("dashboard.summary.status.paused", {
+                        defaultValue: "Paused",
+                      })
+                    : t("dashboard.summary.status.idle", {
+                        defaultValue: "Idle",
+                      })}
                 </span>
                 <span className="summary-sub">
                   {t("dashboard.summary.status.sub", {
@@ -972,11 +1224,17 @@ const ScreenshotApp = () => {
 
               <div className="summary-card">
                 <span className="summary-label">
-                  {t("dashboard.summary.today.label", { defaultValue: "Today's Time" })}
+                  {t("dashboard.summary.today.label", {
+                    defaultValue: "Today's Time",
+                  })}
                 </span>
-                <span className="summary-value">{formatTime(elapsedSeconds)}</span>
+                <span className="summary-value">
+                  {formatTime(elapsedSeconds)}
+                </span>
                 <span className="summary-sub">
-                  {t("dashboard.summary.today.sub", { defaultValue: "Session duration" })}
+                  {t("dashboard.summary.today.sub", {
+                    defaultValue: "Session duration",
+                  })}
                 </span>
               </div>
             </div>
@@ -985,7 +1243,9 @@ const ScreenshotApp = () => {
             <div className="card card-filters">
               <div className="card-header">
                 <h2 className="card-title">
-                  {t("dashboard.workContext.title", { defaultValue: "Work Context" })}
+                  {t("dashboard.workContext.title", {
+                    defaultValue: "Work Context",
+                  })}
                 </h2>
                 <span className="card-tag">
                   {t("dashboard.workContext.tag", { defaultValue: "Live" })}
@@ -1005,7 +1265,10 @@ const ScreenshotApp = () => {
                       onChange={handleProjectFilterChange}
                       className="scrollable-select"
                       disabled={
-                        isCapturing || isPaused || blockSelections || approvalLoading
+                        isCapturing ||
+                        isPaused ||
+                        blockSelections ||
+                        approvalLoading
                       }
                     >
                       <option value="">
@@ -1032,13 +1295,20 @@ const ScreenshotApp = () => {
                       onChange={handleTaskChange}
                       className="scrollable-select"
                       disabled={
-                        isCapturing || isPaused || blockSelections || approvalLoading
+                        isCapturing ||
+                        isPaused ||
+                        blockSelections ||
+                        approvalLoading
                       }
                     >
                       <option value="">
                         {filteredTasks.length
-                          ? t("dashboard.workContext.task.select", { defaultValue: "Select Task" })
-                          : t("dashboard.workContext.task.none", { defaultValue: "No tasks available" })}
+                          ? t("dashboard.workContext.task.select", {
+                              defaultValue: "Select Task",
+                            })
+                          : t("dashboard.workContext.task.none", {
+                              defaultValue: "No tasks available",
+                            })}
                       </option>
                       {filteredTasks.map((task) => {
                         const tid = getTaskId(task);
@@ -1066,7 +1336,9 @@ const ScreenshotApp = () => {
             <div className="card card-controls">
               <div className="card-header">
                 <h2 className="card-title">
-                  {t("dashboard.controls.title", { defaultValue: "Session Controls" })}
+                  {t("dashboard.controls.title", {
+                    defaultValue: "Session Controls",
+                  })}
                 </h2>
               </div>
               <div className="card-body">
@@ -1080,12 +1352,15 @@ const ScreenshotApp = () => {
                       title={
                         isFreelancer && approvalStatus === 1
                           ? t("dashboard.controls.startTitleRecheck", {
-                              defaultValue: "We’ll re-check approval when you click Start",
+                              defaultValue:
+                                "We’ll re-check approval when you click Start",
                             })
                           : ""
                       }
                     >
-                      {t("dashboard.controls.start", { defaultValue: "Start Recording" })}
+                      {t("dashboard.controls.start", {
+                        defaultValue: "Start Recording",
+                      })}
                     </button>
                   )}
 
@@ -1094,7 +1369,8 @@ const ScreenshotApp = () => {
                     className="btn-warning"
                     onClick={isPaused ? handleResume : handlePause}
                     disabled={
-                      (!isPaused && isFreelancer && approvalStatus === 1) || false
+                      (!isPaused && isFreelancer && approvalStatus === 1) ||
+                      false
                     }
                     title={
                       !isPaused && isFreelancer && approvalStatus === 1
@@ -1105,8 +1381,12 @@ const ScreenshotApp = () => {
                     }
                   >
                     {isPaused
-                      ? t("dashboard.controls.resume", { defaultValue: "Resume" })
-                      : t("dashboard.controls.pause", { defaultValue: "Pause" })}
+                      ? t("dashboard.controls.resume", {
+                          defaultValue: "Resume",
+                        })
+                      : t("dashboard.controls.pause", {
+                          defaultValue: "Pause",
+                        })}
                   </button>
 
                   <button
@@ -1114,7 +1394,9 @@ const ScreenshotApp = () => {
                     className="btn-success"
                     onClick={handleFinish}
                   >
-                    {t("dashboard.controls.submit", { defaultValue: "Submit Task" })}
+                    {t("dashboard.controls.submit", {
+                      defaultValue: "Submit Task",
+                    })}
                   </button>
                 </div>
 
@@ -1124,7 +1406,9 @@ const ScreenshotApp = () => {
                       defaultValue: "Capture Duration",
                     })}
                   </span>
-                  <span className="timer-value">{formatTime(elapsedSeconds)}</span>
+                  <span className="timer-value">
+                    {formatTime(elapsedSeconds)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1135,7 +1419,9 @@ const ScreenshotApp = () => {
             <div className="card card-preview">
               <div className="card-header">
                 <h2 className="card-title">
-                  {t("dashboard.preview.title", { defaultValue: "Live Screen Preview" })}
+                  {t("dashboard.preview.title", {
+                    defaultValue: "Live Screen Preview",
+                  })}
                 </h2>
                 <span className="card-subtitle">
                   {t("dashboard.preview.subtitle", {

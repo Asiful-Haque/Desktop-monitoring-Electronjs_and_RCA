@@ -108,5 +108,59 @@
     "submitFailed": "ٹائم ٹریکنگ جمع نہیں ہو سکی۔",
     "timeSaved": "ٹائم ٹریکنگ محفوظ ہو گئی!",
     "submitNetworkError": "ٹائم ٹریکنگ جمع کرتے وقت نیٹ ورک ایرر۔"
+  },
+    "sidebar": {
+    "brand": "ٹاسک پرو !!",
+    "dashboard": "ڈیش بورڈ",
+    "tasks": "ٹاسکس",
+    "createTask": "ٹاسک بنائیں",
+    "settings": "سیٹنگز",
+    "logout": "لاگ آؤٹ",
+    "submenuAria": "{{label}} سب مینو"
+  },
+    "common": {
+    "cancel": "منسوخ کریں"
+  },
+  "addTask": {
+    "title": "نیا ٹاسک شامل کریں",
+    "subtitle": "اپنے پروجیکٹ کے لیے نیا ٹاسک بنائیں",
+    "close": "بند کریں",
+    "fields": {
+      "taskName": "ٹاسک کا نام",
+      "description": "تفصیل",
+      "assignedTo": "تفویض کریں",
+      "timezone": "ٹائم زون",
+      "startDate": "آغاز کی تاریخ",
+      "deadline": "آخری تاریخ",
+      "status": "اسٹیٹس",
+      "project": "پروجیکٹ",
+      "priority": "ترجیح"
+    },
+    "placeholders": {
+      "taskName": "ٹاسک کا نام درج کریں",
+      "description": "ٹاسک کی تفصیل درج کریں",
+      "selectUser": "یوزر منتخب کریں",
+      "selectStatus": "اسٹیٹس منتخب کریں",
+      "selectProject": "پروجیکٹ منتخب کریں",
+      "selectPriority": "ترجیح منتخب کریں"
+    },
+    "actions": {
+      "addTask": "ٹاسک شامل کریں"
+    },
+    "status": {
+      "in_progress": "جاری ہے",
+      "completed": "مکمل"
+    },
+    "priority": {
+      "low": "کم",
+      "medium": "درمیانی",
+      "high": "زیادہ"
+    },
+    "toast": {
+      "fillAll": "براہِ کرم تمام فیلڈز پُر کریں۔",
+      "createFailed": "ٹاسک بنانے میں ناکامی",
+      "networkError": "نیٹ ورک ایرر",
+      "created": "ٹاسک \"{{name}}\" بن گیا"
+    }
   }
 }

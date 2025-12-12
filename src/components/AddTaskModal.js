@@ -1,10 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import "./addtaskmodal.css";
 import Select from "react-select";
-import toast from "../toaster"; 
+import toast from "../toaster";
+import { useTranslation } from "react-i18next";
 
 const statusOptions = ["in_progress", "completed"];
 const priorityOptions = ["low", "medium", "high"];
+
+const titleCase = (s) =>
+  String(s || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 
 const AddTaskModal = ({
   open,
@@ -13,6 +19,8 @@ const AddTaskModal = ({
   curruser,
   allusers = {},
 }) => {
+  const { t } = useTranslation();
+
   const userOptions = useMemo(() => {
     if (!curruser) return [];
     if (curruser?.role_name === "Developer") {
@@ -27,7 +35,7 @@ const AddTaskModal = ({
     () =>
       projects.map((p) => ({
         value: String(p.project_id),
-        label: p.project_name,
+        label: p.project_name, // keep project names as-is (from DB)
       })),
     [projects]
   );
@@ -71,9 +79,10 @@ const AddTaskModal = ({
       "project_name",
       "priority",
     ];
+
     for (const k of required) {
       if (!formData[k]) {
-        toast.warning("Please fill in all fields.");
+        toast.warning(t("addTask.toast.fillAll"));
         return;
       }
     }
@@ -88,15 +97,16 @@ const AddTaskModal = ({
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        toast.error(err?.message || "Failed to create task");
+        toast.error(err?.message || t("addTask.toast.createFailed"));
         return;
       }
 
       const data = await res.json();
-      toast.success(`Task "${data?.task?.task_name || formData.task_name}" created`);
-      onClose?.(true); // can close immediately; toaster is global
+      const createdName = data?.task?.task_name || formData.task_name;
+      toast.success(t("addTask.toast.created", { name: createdName }));
+      onClose?.(true);
     } catch (error) {
-      toast.error(error?.message || "Network error");
+      toast.error(error?.message || t("addTask.toast.networkError"));
     }
   };
 
@@ -193,13 +203,14 @@ const AddTaskModal = ({
       <div className="modal-card" role="document">
         <div className="modal-head">
           <div>
-            <div className="modal-title">Add New Task</div>
-            <div className="modal-sub">Create a new task for your project</div>
+            <div className="modal-title">{t("addTask.title")}</div>
+            <div className="modal-sub">{t("addTask.subtitle")}</div>
           </div>
           <button
             className="modal-x"
             onClick={() => onClose?.(false)}
-            aria-label="Close"
+            aria-label={t("addTask.close")}
+            title={t("addTask.close")}
           >
             ✕
           </button>
@@ -207,31 +218,31 @@ const AddTaskModal = ({
 
         <form className="modal-body" onSubmit={handleSubmit}>
           <div className="frow">
-            <label htmlFor="task_name">Task Name</label>
+            <label htmlFor="task_name">{t("addTask.fields.taskName")}</label>
             <input
               id="task_name"
               value={formData.task_name}
               onChange={(e) =>
                 setFormData({ ...formData, task_name: e.target.value })
               }
-              placeholder="Enter task name"
+              placeholder={t("addTask.placeholders.taskName")}
             />
           </div>
 
           <div className="frow">
-            <label htmlFor="task_description">Description</label>
+            <label htmlFor="task_description">{t("addTask.fields.description")}</label>
             <input
               id="task_description"
               value={formData.task_description}
               onChange={(e) =>
                 setFormData({ ...formData, task_description: e.target.value })
               }
-              placeholder="Enter task description"
+              placeholder={t("addTask.placeholders.description")}
             />
           </div>
 
           <div className="frow">
-            <label htmlFor="assigned_to">Assigned To</label>
+            <label htmlFor="assigned_to">{t("addTask.fields.assignedTo")}</label>
             <select
               id="assigned_to"
               value={formData.assigned_to}
@@ -239,7 +250,7 @@ const AddTaskModal = ({
                 setFormData({ ...formData, assigned_to: e.target.value })
               }
             >
-              <option value="">Select user</option>
+              <option value="">{t("addTask.placeholders.selectUser")}</option>
               {userOptions.map((u) => (
                 <option key={u.id} value={String(u.id)}>
                   {u.name}
@@ -249,14 +260,14 @@ const AddTaskModal = ({
           </div>
 
           <div className="frow">
-            <label>Timezone</label>
+            <label>{t("addTask.fields.timezone")}</label>
             <div className="readonly-field">
               {Intl.DateTimeFormat().resolvedOptions().timeZone}
             </div>
           </div>
 
           <div className="frow">
-            <label htmlFor="start_date">Start Date</label>
+            <label htmlFor="start_date">{t("addTask.fields.startDate")}</label>
             <input
               id="start_date"
               type="datetime-local"
@@ -268,7 +279,7 @@ const AddTaskModal = ({
           </div>
 
           <div className="frow">
-            <label htmlFor="deadline">Deadline</label>
+            <label htmlFor="deadline">{t("addTask.fields.deadline")}</label>
             <input
               id="deadline"
               type="datetime-local"
@@ -280,7 +291,7 @@ const AddTaskModal = ({
           </div>
 
           <div className="frow">
-            <label htmlFor="status">Status</label>
+            <label htmlFor="status">{t("addTask.fields.status")}</label>
             <select
               id="status"
               value={formData.status}
@@ -288,17 +299,17 @@ const AddTaskModal = ({
                 setFormData({ ...formData, status: e.target.value })
               }
             >
-              <option value="">Select status</option>
+              <option value="">{t("addTask.placeholders.selectStatus")}</option>
               {statusOptions.map((s) => (
                 <option key={s} value={s}>
-                  {s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                  {t(`addTask.status.${s}`, { defaultValue: titleCase(s) })}
                 </option>
               ))}
             </select>
           </div>
 
           <div className="frow">
-            <label htmlFor="project_name">Project</label>
+            <label htmlFor="project_name">{t("addTask.fields.project")}</label>
             <Select
               inputId="project_name"
               classNamePrefix="rs"
@@ -307,7 +318,7 @@ const AddTaskModal = ({
                 setFormData({ ...formData, project_name: opt?.value || "" })
               }
               options={projectOptions}
-              placeholder="Select project"
+              placeholder={t("addTask.placeholders.selectProject")}
               menuPortalTarget={document.body}
               menuPosition="fixed"
               isSearchable
@@ -316,7 +327,7 @@ const AddTaskModal = ({
           </div>
 
           <div className="frow">
-            <label htmlFor="priority">Priority</label>
+            <label htmlFor="priority">{t("addTask.fields.priority")}</label>
             <select
               id="priority"
               value={formData.priority}
@@ -324,10 +335,10 @@ const AddTaskModal = ({
                 setFormData({ ...formData, priority: e.target.value })
               }
             >
-              <option value="">Select priority</option>
+              <option value="">{t("addTask.placeholders.selectPriority")}</option>
               {priorityOptions.map((p) => (
                 <option key={p} value={p}>
-                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                  {t(`addTask.priority.${p}`, { defaultValue: titleCase(p) })}
                 </option>
               ))}
             </select>
@@ -339,10 +350,10 @@ const AddTaskModal = ({
               className="btn ghost"
               onClick={() => onClose?.(false)}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button type="submit" className="btnaddtask">
-              Add Task
+              {t("addTask.actions.addTask")}
             </button>
           </div>
         </form>

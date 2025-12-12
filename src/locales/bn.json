@@ -108,5 +108,60 @@
     "submitFailed": "টাইম ট্র্যাকিং সাবমিট ব্যর্থ হয়েছে।",
     "timeSaved": "টাইম ট্র্যাকিং সেভ হয়েছে!",
     "submitNetworkError": "টাইম ট্র্যাকিং সাবমিট করতে নেটওয়ার্ক ত্রুটি।"
+  },
+    "sidebar": {
+    "brand": "টাস্ক প্রো !!",
+    "dashboard": "ড্যাশবোর্ড",
+    "tasks": "টাস্কসমূহ",
+    "createTask": "টাস্ক তৈরি করুন",
+    "settings": "সেটিংস",
+    "logout": "লগ আউট",
+    "submenuAria": "{{label}} সাবমেনু"
+  },
+    "common": {
+    "cancel": "বাতিল"
+  },
+  "addTask": {
+    "title": "নতুন টাস্ক যোগ করুন",
+    "subtitle": "আপনার প্রজেক্টের জন্য একটি নতুন টাস্ক তৈরি করুন",
+    "close": "বন্ধ করুন",
+    "fields": {
+      "taskName": "টাস্কের নাম",
+      "description": "বিবরণ",
+      "assignedTo": "যাকে দেওয়া হবে",
+      "timezone": "টাইমজোন",
+      "startDate": "শুরুর সময়",
+      "deadline": "ডেডলাইন",
+      "status": "স্ট্যাটাস",
+      "project": "প্রজেক্ট",
+      "priority": "অগ্রাধিকার"
+    },
+    "placeholders": {
+      "taskName": "টাস্কের নাম লিখুন",
+      "description": "টাস্কের বিবরণ লিখুন",
+      "selectUser": "ইউজার নির্বাচন করুন",
+      "selectStatus": "স্ট্যাটাস নির্বাচন করুন",
+      "selectProject": "প্রজেক্ট নির্বাচন করুন",
+      "selectPriority": "অগ্রাধিকার নির্বাচন করুন"
+    },
+    "actions": {
+      "addTask": "টাস্ক যোগ করুন"
+    },
+    "status": {
+      "in_progress": "চলমান",
+      "completed": "সম্পন্ন"
+    },
+    "priority": {
+      "low": "কম",
+      "medium": "মাঝারি",
+      "high": "উচ্চ"
+    },
+    "toast": {
+      "fillAll": "অনুগ্রহ করে সবগুলো তথ্য পূরণ করুন।",
+      "createFailed": "টাস্ক তৈরি করা যায়নি",
+      "networkError": "নেটওয়ার্ক ত্রুটি",
+      "created": "টাস্ক \"{{name}}\" তৈরি হয়েছে"
+    }
   }
+
 }
