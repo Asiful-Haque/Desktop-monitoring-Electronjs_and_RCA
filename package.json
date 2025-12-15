@@ -68,6 +68,7 @@
     "cross-env": "^10.0.0",
     "electron": "^36.3.1",
     "electron-builder": "^26.0.12",
+    "eslint-plugin-react-hooks": "^7.0.1",
     "nodemon": "^3.1.10",
     "react-scripts": "^5.0.1",
     "wait-on": "^7.0.1"
