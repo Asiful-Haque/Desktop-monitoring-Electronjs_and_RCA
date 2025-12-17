@@ -50,34 +50,57 @@ export default function useDraftManager({
   );
   const networkPollRef = useRef(null);
   const autoSaveRef = useRef(null);
+  const loginAutoSaveInFlightRef = useRef(false);
 
   const clearDraft = () => {
-    localStorage.removeItem(DRAFT_KEY);
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {}
     pendingAutoSubmitRef.current = false;
     restoredDraftRef.current = null;
   };
+  const disableDraftWritesRef = useRef(false);
+
+
+  // Helper function to format the date to YYYY-MM-DD
+  const formatDateYMD = (date) => {
+    const dt = date instanceof Date ? date : new Date(date);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(dt.getDate()).padStart(2, "0")}`;
+  };
+  const toIsoNoMs = (d) =>
+    (d instanceof Date ? d : new Date(d))
+      .toISOString()
+      .replace(/\.\d{3}Z$/, "Z");
+
+  const getUserTz = () =>
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const getUserOffsetMinutes = () => new Date().getTimezoneOffset();
 
   // ✅ Save draft to localStorage (always ISO strings)
   const persistDraft = (forcePending = true, meta = {}) => {
+    if (disableDraftWritesRef.current) return;
     try {
       const stateToSave = {
         selectedTaskId,
         selectedTaskName,
         elapsedSeconds: elapsedSecondsRef.current,
         segments: (segmentsRef.current || []).map((s) => ({
-          startAt: (
-            s?.startAt instanceof Date ? s.startAt : new Date(s.startAt)
+          startAt: (s?.startAt instanceof Date
+            ? s.startAt
+            : new Date(s.startAt)
           ).toISOString(),
-          endAt: (
-            s?.endAt instanceof Date ? s.endAt : new Date(s.endAt)
+          endAt: (s?.endAt instanceof Date
+            ? s.endAt
+            : new Date(s.endAt)
           ).toISOString(),
         })),
         openStartAt: startAtRef.current
-          ? (
-              startAtRef.current instanceof Date
-                ? startAtRef.current.toISOString()
-                : new Date(startAtRef.current).toISOString()
-            )
+          ? startAtRef.current instanceof Date
+            ? startAtRef.current.toISOString()
+            : new Date(startAtRef.current).toISOString()
           : null,
         isCapturing,
         isPaused,
@@ -93,6 +116,7 @@ export default function useDraftManager({
   };
 
   const finalizeAndPersistOnClose = (reason = "close") => {
+    if (disableDraftWritesRef.current) return;
     try {
       if (isCapturingRef.current && startAtRef.current) {
         const end = new Date();
@@ -137,10 +161,9 @@ export default function useDraftManager({
     }
   };
 
-  // Restore from localStorage on mount
+  // Restore from localStorage on mount------------------------------------------------------------
   useEffect(() => {
     const cachedData = localStorage.getItem(DRAFT_KEY);
-    console.log("🎥🟢 We found some data in localStorage:", cachedData);
 
     if (!cachedData) return;
 
@@ -169,6 +192,7 @@ export default function useDraftManager({
           });
         }
 
+
         segmentsRef.current = restoredSegments;
         pendingAutoSubmitRef.current = !!parsedData.pendingAutoSubmit;
 
@@ -185,7 +209,6 @@ export default function useDraftManager({
     } catch (e) {
       console.error("Failed to parse cachedData:", e);
     }
-    
   }, []);
 
   // Auto-save while capturing
@@ -208,7 +231,6 @@ export default function useDraftManager({
         autoSaveRef.current = null;
       }
     };
-    
   }, [isCapturing, selectedTaskId, selectedTaskName]);
 
   // beforeunload + visibilitychange
@@ -227,7 +249,6 @@ export default function useDraftManager({
       window.removeEventListener("beforeunload", onBeforeUnload);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-    
   }, [selectedTaskId]);
 
   // Offline event
@@ -235,7 +256,6 @@ export default function useDraftManager({
     const onOffline = () => handleNetworkLoss("offline_event");
     window.addEventListener("offline", onOffline);
     return () => window.removeEventListener("offline", onOffline);
-    
   }, [selectedTaskId]);
 
   // Offline polling
@@ -257,21 +277,38 @@ export default function useDraftManager({
       clearInterval(networkPollRef.current);
       networkPollRef.current = null;
     };
-    
   }, [selectedTaskId]);
 
   // Login auto-save once tasks load
   useEffect(() => {
     const runLoginAutoSave = async () => {
+      // ✅ hard guards
       if (autoSavedDraftOnceRef.current) return;
+      if (loginAutoSaveInFlightRef.current) return;
       if (!taskData || taskData.length === 0) return;
 
       const draft = restoredDraftRef.current;
       if (!draft?.selectedTaskId) return;
 
+      // ✅ lock immediately (prevents duplicates)
+      loginAutoSaveInFlightRef.current = true;
+      autoSavedDraftOnceRef.current = true;
+
+      // Find task
       const serverTask = taskData.find(
         (tt) => String(getTaskId(tt)) === String(draft.selectedTaskId)
       );
+
+      if (!serverTask) {
+        console.error(
+          "No task found for the draft selectedTaskId:",
+          draft.selectedTaskId
+        );
+        // allow retry if taskData changes later
+        loginAutoSaveInFlightRef.current = false;
+        autoSavedDraftOnceRef.current = false;
+        return;
+      }
 
       const draftSeconds = Number(draft.elapsedSeconds || 0);
       const serverSeconds = toSeconds(serverTask?.last_timing);
@@ -281,16 +318,24 @@ export default function useDraftManager({
         Math.floor(Math.max(draftSeconds, serverSeconds))
       );
 
+      // ✅ DO NOT let these state updates re-trigger another submission now
       if (draft.selectedTaskName && !selectedTaskName) {
         setSelectedTaskName(draft.selectedTaskName);
       } else if (serverTask?.task_name && !selectedTaskName) {
         setSelectedTaskName(serverTask.task_name);
       }
+
       if (totalSeconds !== elapsedSecondsRef.current)
         setElapsedSeconds(totalSeconds);
 
       try {
-        if (serverTask && serverSeconds < totalSeconds) {
+        // ✅ IMPORTANT: use localStorage like ScreenshotApp (not assigned_to, not hardcoded 1)
+        const developerId =
+          Number(localStorage.getItem("user_id") || 0) || null;
+        const tenantId = Number(localStorage.getItem("tenant_id") || 0) || null;
+
+        // 1) update task timing (only if needed)
+        if (serverSeconds < totalSeconds) {
           const updateRes = await fetch(
             `${API_BASE}/api/tasks/task-update/${draft.selectedTaskId}`,
             {
@@ -310,7 +355,57 @@ export default function useDraftManager({
           }
         }
 
-        autoSavedDraftOnceRef.current = true;
+
+        const segmentsToSend = (segmentsRef.current || [])
+          .filter(
+            (seg) =>
+              seg?.startAt &&
+              seg?.endAt &&
+              new Date(seg.endAt) > new Date(seg.startAt)
+          )
+          .map((seg) => {
+            const work_date = seg.startAt;
+            const task_start = seg.startAt;
+            const task_end = seg.endAt;
+
+            return {
+              task_id: Number(draft.selectedTaskId),
+              project_id: Number(serverTask.project_id),
+              developer_id: developerId,
+              work_date: formatDateYMD(work_date),
+              task_start: toIsoNoMs(task_start),
+              task_end: toIsoNoMs(task_end),
+              tenant_id: tenantId,
+              user_tz: getUserTz(),
+              user_offset_minutes: getUserOffsetMinutes(),
+            };
+          });
+
+        if (segmentsToSend.length > 0) {
+          // ✅ send ONE object if length===1 (matches ScreenshotApp)
+          const bodyToSend =
+            segmentsToSend.length === 1 ? segmentsToSend[0] : segmentsToSend;
+
+          const timeTrackingRes = await fetch(`${API_BASE}/api/time-tracking`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(bodyToSend),
+          });
+
+          const ttData = await timeTrackingRes.json().catch(() => ({}));
+
+          if (!timeTrackingRes.ok) {
+            console.warn("Time-tracking sync failed:", ttData);
+          }
+        }
+
+        // ✅ flagger back to 0 (you said this is missing)
+        try {
+          await updateTaskFlagger(draft.selectedTaskId, 0);
+        } catch (e) {
+          console.warn("updateTaskFlagger failed:", e);
+        }
 
         if (!shownAutoSavedToastRef.current) {
           shownAutoSavedToastRef.current = true;
@@ -322,16 +417,33 @@ export default function useDraftManager({
           );
         }
 
+        disableDraftWritesRef.current = true;
+
+        if (autoSaveRef.current) {
+          clearInterval(autoSaveRef.current);
+          autoSaveRef.current = null;
+        }
+
+        startAtRef.current = null;
+        segmentsRef.current = [];
+        pendingAutoSubmitRef.current = false;
+
+        setSelectedTaskId("");
+        setSelectedTaskName("");
+        setElapsedSeconds(0);
+
         clearDraft();
-        setTimeout(() => window.location.reload(), 3000);
+        setTimeout(() => window.location.reload(), 600000);
       } catch (e) {
         console.error("Login auto-save error:", e);
-        autoSavedDraftOnceRef.current = true;
+
+        // ✅ if you want retry on failure, unlock here:
+        loginAutoSaveInFlightRef.current = false;
+        autoSavedDraftOnceRef.current = false;
       }
     };
 
     runLoginAutoSave();
-    
   }, [taskData, selectedTaskName, API_BASE, t]);
 
   // expose helper for finish/pause
