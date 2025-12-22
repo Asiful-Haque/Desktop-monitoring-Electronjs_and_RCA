@@ -119,6 +119,27 @@ const ScreenshotApp = () => {
     }, 2500);
   };
 
+  const handleIdleWasWorking = () => {
+    idle.confirmIdleDialog();
+  };
+
+  const handleIdleWasBreak = () => {
+    const deductionSeconds = idle.idleWarningSeconds || 0;
+    if (startAtRef.current) {
+      const newStart = new Date(
+        startAtRef.current.getTime() + deductionSeconds * 1000
+      );
+      startAtRef.current = newStart;
+    }
+    if (elapsedSecondsRef.current) {
+      elapsedSecondsRef.current = Math.max(
+        0,
+        elapsedSecondsRef.current - deductionSeconds
+      );
+    }
+    idle.confirmIdleDialog();
+  };
+
   // approval
   const approval = useApprovalStatus({ API_BASE, currUser });
   const {
@@ -443,7 +464,11 @@ const ScreenshotApp = () => {
     const user_tz = getUserTz();
     const user_offset_minutes = getUserOffsetMinutes();
 
-    console.log("🟢 Submitting segments: from direct save.............", segmentsRef.current);
+    console.log(
+      "🟢 Submitting segments: from direct save.............",
+      segmentsRef.current
+    );
+    //----------------------------------------------------------------------------
     const rows = segmentsRef.current
       .filter((s) => s.startAt && s.endAt && s.endAt > s.startAt)
       .map((seg) => ({
@@ -523,7 +548,7 @@ const ScreenshotApp = () => {
       setIsCapturing(false);
       setIsPaused(false);
 
-      if (!silentAutoSubmit) setTimeout(() => window.location.reload(), 1000);
+      if (!silentAutoSubmit) setTimeout(() => window.location.reload(), 300000);
     } catch (err) {
       draft.persistDraft(true, { reason: "submit_network_error" });
       if (!silentAutoSubmit) {
@@ -703,10 +728,12 @@ const ScreenshotApp = () => {
               idle.idleWarningSeconds
             )}.`,
           })}
-          cancelText={t("confirm.cancel", { defaultValue: "I was in a break" })}
-          okText={t("confirm.ok", { defaultValue: "I was working" })}
-          onCancel={idle.confirmIdleDialog}
-          onConfirm={idle.confirmIdleDialog} // Reset counters only after clicking "OK"
+          cancelText={t("confirm.I was in a break", {
+            defaultValue: "I was in a break",
+          })}
+          onCancel={handleIdleWasBreak}
+          okText={t("confirm.I was working", { defaultValue: "I was working" })}
+          onConfirm={handleIdleWasWorking}
         />
 
         <DashboardHeader

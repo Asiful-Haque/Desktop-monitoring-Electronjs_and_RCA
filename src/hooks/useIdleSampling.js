@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export default function useIdleSampling() {
   const samplingRef = useRef(null);
@@ -7,65 +7,129 @@ export default function useIdleSampling() {
   const idleSecondsThisCycleRef = useRef(0);
   const secondsSampledRef = useRef(0);
 
-  // full-session idle/active + continuous idle tracking
+  // full-session idle/active tracking
   const totalIdleSecondsRef = useRef(0);
   const totalActiveSecondsRef = useRef(0);
+
+  // (kept for compatibility)
   const continuousIdleSecondsRef = useRef(0);
 
   // idle warning popup
   const [idleWarningOpen, setIdleWarningOpen] = useState(false);
   const [idleWarningSeconds, setIdleWarningSeconds] = useState(0);
 
-  // Stop sampling (when required)
+  // ✅ avoid stale state inside interval
+  const idleWarningOpenRef = useRef(false);
+  useEffect(() => {
+    idleWarningOpenRef.current = idleWarningOpen;
+  }, [idleWarningOpen]);
+
+  const IDLE_THRESHOLD_SECONDS = 10;
+
+  // ✅ phase 1: continuous idle until dialog opens (resets on activity)
+  const preDialogContinuousIdleRef = useRef(0);
+
+  // ✅ phase 2: accumulated idle while dialog is open (pauses on activity)
+  const dialogIdleAccumRef = useRef(0);
+
   const stopSampling = () => {
     clearInterval(samplingRef.current);
     samplingRef.current = null;
+
     idleSecondsThisCycleRef.current = 0;
     secondsSampledRef.current = 0;
+
+    totalIdleSecondsRef.current = 0;
+    totalActiveSecondsRef.current = 0;
+
     continuousIdleSecondsRef.current = 0;
+
+    preDialogContinuousIdleRef.current = 0;
+    dialogIdleAccumRef.current = 0;
+
+    setIdleWarningSeconds(0);
+    setIdleWarningOpen(false);
   };
 
-  // Start sampling idle time
   const startSampling = () => {
     if (samplingRef.current) return;
 
     samplingRef.current = setInterval(async () => {
-      const idle = await window.electronAPI.getIdleTime(); // Get idle time
-      const isIdle = idle >= 1; // Determine if user is idle
+      const idle = await window.electronAPI.getIdleTime(); // seconds since last OS input
+      const isIdleNow = idle >= 1;
 
       secondsSampledRef.current++;
 
-      // If idle, continue increasing the counter
-      if (isIdle) {
-        idleSecondsThisCycleRef.current++;
-        totalIdleSecondsRef.current++;
-        continuousIdleSecondsRef.current++;
-        setIdleWarningSeconds(continuousIdleSecondsRef.current); // Update idle warning time
-        if (!idleWarningOpen && continuousIdleSecondsRef.current >= 10) {
-          setIdleWarningOpen(true); // Show warning if idle time reaches 10 seconds
+      // -----------------------------
+      // If dialog is NOT open yet:
+      // - behave like "continuous idle counter" that resets on activity
+      // - open dialog at 10 seconds
+      // -----------------------------
+      if (!idleWarningOpenRef.current) {
+        if (isIdleNow) {
+          idleSecondsThisCycleRef.current++;
+          totalIdleSecondsRef.current++;
+
+          preDialogContinuousIdleRef.current += 1;
+          continuousIdleSecondsRef.current = preDialogContinuousIdleRef.current;
+
+          setIdleWarningSeconds(preDialogContinuousIdleRef.current);
+
+          if (preDialogContinuousIdleRef.current >= IDLE_THRESHOLD_SECONDS) {
+            // open dialog and start "dialog session" counter from the current value
+            dialogIdleAccumRef.current = preDialogContinuousIdleRef.current;
+            setIdleWarningOpen(true);
+          }
+        } else {
+          totalActiveSecondsRef.current++;
+
+          // ✅ reset before-dialog counter on activity
+          preDialogContinuousIdleRef.current = 0;
+          continuousIdleSecondsRef.current = 0;
+          setIdleWarningSeconds(0);
         }
-      } else {
-        // Don't reset the continuous idle counter when user is active
-        totalActiveSecondsRef.current++;
+
+        return;
       }
-    }, 1000); // Sampling every second
+
+      // -----------------------------
+      // If dialog IS open:
+      // - do NOT close it automatically
+      // - pause timer on activity
+      // - resume timer on idle
+      // -----------------------------
+      if (isIdleNow) {
+        totalIdleSecondsRef.current++;
+
+        dialogIdleAccumRef.current += 1;
+        setIdleWarningSeconds(dialogIdleAccumRef.current);
+      } else {
+        totalActiveSecondsRef.current++;
+        // ✅ pause: do nothing (keep the same idleWarningSeconds)
+      }
+    }, 1000);
   };
 
-  // Reset idle counters and warning
   const resetIdleCounters = () => {
     totalIdleSecondsRef.current = 0;
     totalActiveSecondsRef.current = 0;
+
     continuousIdleSecondsRef.current = 0;
+    preDialogContinuousIdleRef.current = 0;
+    dialogIdleAccumRef.current = 0;
+
     setIdleWarningSeconds(0);
-    setIdleWarningOpen(false); // Close warning when reset
+    setIdleWarningOpen(false);
   };
 
-  // Confirm idle dialog (when user clicks "OK")
+  // called when user clicks any button on the dialog (Working/Break)
   const confirmIdleDialog = () => {
-    // When the user clicks "OK", reset only the warning and idle time shown
-    setIdleWarningOpen(false); // Close the warning
-    setIdleWarningSeconds(0); // Reset warning seconds
-    continuousIdleSecondsRef.current = 0; // Reset continuous idle counter after confirmation
+    setIdleWarningOpen(false);
+    setIdleWarningSeconds(0);
+
+    continuousIdleSecondsRef.current = 0;
+    preDialogContinuousIdleRef.current = 0;
+    dialogIdleAccumRef.current = 0;
   };
 
   return {
