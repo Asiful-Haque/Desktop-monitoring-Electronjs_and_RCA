@@ -7,12 +7,15 @@ export default function useIdleSampling() {
   const idleSecondsThisCycleRef = useRef(0);
   const secondsSampledRef = useRef(0);
 
-  // full-session idle/active tracking
+  // full-session idle/active tracking (OS-level sampling)
   const totalIdleSecondsRef = useRef(0);
   const totalActiveSecondsRef = useRef(0);
 
   // (kept for compatibility)
   const continuousIdleSecondsRef = useRef(0);
+
+  // ✅ confirmed break seconds (what you actually deduct)
+  const confirmedBreakSecondsRef = useRef(0);
 
   // idle warning popup
   const [idleWarningOpen, setIdleWarningOpen] = useState(false);
@@ -47,6 +50,8 @@ export default function useIdleSampling() {
     preDialogContinuousIdleRef.current = 0;
     dialogIdleAccumRef.current = 0;
 
+    confirmedBreakSecondsRef.current = 0;
+
     setIdleWarningSeconds(0);
     setIdleWarningOpen(false);
   };
@@ -62,8 +67,8 @@ export default function useIdleSampling() {
 
       // -----------------------------
       // If dialog is NOT open yet:
-      // - behave like "continuous idle counter" that resets on activity
-      // - open dialog at 10 seconds
+      // - continuous idle counter that resets on activity
+      // - open dialog at threshold
       // -----------------------------
       if (!idleWarningOpenRef.current) {
         if (isIdleNow) {
@@ -83,18 +88,17 @@ export default function useIdleSampling() {
         } else {
           totalActiveSecondsRef.current++;
 
-          // ✅ reset before-dialog counter on activity
+          // reset before-dialog counter on activity
           preDialogContinuousIdleRef.current = 0;
           continuousIdleSecondsRef.current = 0;
           setIdleWarningSeconds(0);
         }
-
         return;
       }
 
       // -----------------------------
       // If dialog IS open:
-      // - do NOT close it automatically
+      // - do NOT close automatically
       // - pause timer on activity
       // - resume timer on idle
       // -----------------------------
@@ -105,7 +109,7 @@ export default function useIdleSampling() {
         setIdleWarningSeconds(dialogIdleAccumRef.current);
       } else {
         totalActiveSecondsRef.current++;
-        // ✅ pause: do nothing (keep the same idleWarningSeconds)
+        // pause: keep idleWarningSeconds as-is
       }
     }, 1000);
   };
@@ -117,6 +121,8 @@ export default function useIdleSampling() {
     continuousIdleSecondsRef.current = 0;
     preDialogContinuousIdleRef.current = 0;
     dialogIdleAccumRef.current = 0;
+
+    confirmedBreakSecondsRef.current = 0;
 
     setIdleWarningSeconds(0);
     setIdleWarningOpen(false);
@@ -132,21 +138,65 @@ export default function useIdleSampling() {
     dialogIdleAccumRef.current = 0;
   };
 
+  // ✅ optional helper (alias)
+  const confirmIdleAsWorking = () => {
+    confirmIdleDialog();
+  };
+
+  // ✅ Apply break deduction centrally (no duplicate logic in ScreenshotApp)
+  // - shifts ACTIVE segment start forward
+  // - reduces ACTIVE counter (elapsedSecondsRef)
+  // - increments confirmedBreakSecondsRef
+  // - closes idle dialog
+  const applyBreakDeduction = ({ startAtRef, elapsedSecondsRef }) => {
+    const deductionSeconds = Math.max(0, Number(dialogIdleAccumRef.current || 0));
+
+    if (deductionSeconds > 0) {
+      confirmedBreakSecondsRef.current += deductionSeconds;
+
+      if (startAtRef?.current instanceof Date) {
+        startAtRef.current = new Date(
+          startAtRef.current.getTime() + deductionSeconds * 1000
+        );
+      }
+
+      if (elapsedSecondsRef && typeof elapsedSecondsRef.current === "number") {
+        elapsedSecondsRef.current = Math.max(
+          0,
+          elapsedSecondsRef.current - deductionSeconds
+        );
+      }
+    }
+
+    confirmIdleDialog();
+    return deductionSeconds;
+  };
+
   return {
     startSampling,
     stopSampling,
     resetIdleCounters,
+
+    // dialog controls
     confirmIdleDialog,
+    confirmIdleAsWorking,
+    applyBreakDeduction,
 
     idleWarningOpen,
     idleWarningSeconds,
 
+    // refs
     samplingRef,
     idleSecondsThisCycleRef,
     secondsSampledRef,
     totalIdleSecondsRef,
     totalActiveSecondsRef,
     continuousIdleSecondsRef,
+
+    // ✅ new ref
+    confirmedBreakSecondsRef,
+
+    // kept
     setIdleWarningOpen,
     setIdleWarningSeconds,
   };

@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import "../styles/screenshotapp.css";
 
@@ -34,7 +28,7 @@ const ScreenshotApp = () => {
   const previewRef = useRef(null);
   const streamsRef = useRef([]);
 
-  const streamRef = useRef(null); // preserved (your original quit/logout logic used it)
+  const streamRef = useRef(null); // preserved quit/logout logic
 
   const [isCapturing, setIsCapturing] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -44,16 +38,14 @@ const ScreenshotApp = () => {
     isCapturingRef.current = isCapturing;
   }, [isCapturing]);
 
-  const { elapsedSeconds, setElapsedSeconds, elapsedSecondsRef } =
-    useElapsedSeconds();
+  const { elapsedSeconds, setElapsedSeconds, elapsedSecondsRef } = useElapsedSeconds();
   const { startTimer, stopTimer } = useSessionTimer(setElapsedSeconds);
 
   const idle = useIdleSampling();
 
   // DATA
   const API_BASE = process.env.REACT_APP_API_BASE;
-  const { taskData, projects, currUser, allUsers, fetchTasks } =
-    useAppData(API_BASE);
+  const { taskData, projects, currUser, allUsers, fetchTasks } = useAppData(API_BASE);
 
   // SELECTIONS
   const [selectedProjectId, setSelectedProjectId] = useState("");
@@ -72,9 +64,29 @@ const ScreenshotApp = () => {
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-  // timing segments
+  // -----------------------------
+  // ACTIVE segments (deductions applied)
+  // -----------------------------
   const startAtRef = useRef(null);
   const segmentsRef = useRef([]);
+
+  // -----------------------------
+  // RAW segments (no deductions) -> for "actual start/end"
+  // -----------------------------
+  const rawStartAtRef = useRef(null);
+  const rawSegmentsRef = useRef([]);
+
+  // UI display for "actual start/end"
+  const [sessionWindowStart, setSessionWindowStart] = useState(null);
+  const [sessionWindowEnd, setSessionWindowEnd] = useState(null);
+
+  // tick so counters update while recording
+  const [uiNowMs, setUiNowMs] = useState(Date.now());
+  useEffect(() => {
+    if (!isCapturing) return;
+    const id = setInterval(() => setUiNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isCapturing]);
 
   // helpers
   const user_id = localStorage.getItem("user_id");
@@ -82,6 +94,7 @@ const ScreenshotApp = () => {
 
   const getTaskId = (tt) => tt?.id ?? tt?.task_id ?? tt?._id;
   const pad = (n) => String(n).padStart(2, "0");
+
   const formatTime = (total) => {
     const s = Math.max(0, Math.floor(total || 0));
     const hh = pad(Math.floor(s / 3600));
@@ -89,23 +102,39 @@ const ScreenshotApp = () => {
     const ss = pad(s % 60);
     return `${hh}:${mm}:${ss}`;
   };
+
   const toSeconds = (val) => {
     if (val === null || val === undefined) return 0;
     const n = parseInt(String(val).trim(), 10);
     return Number.isFinite(n) ? Math.max(0, n) : 0;
   };
+
   const formatDateYMD = (d) => {
     const dt = d instanceof Date ? d : new Date(d);
     return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
   };
-  const toIsoNoMs = (d) =>
-    (d instanceof Date ? d : new Date(d))
-      .toISOString()
-      .replace(/\.\d{3}Z$/, "Z");
 
-  const getUserTz = () =>
-    Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const toIsoNoMs = (d) =>
+    (d instanceof Date ? d : new Date(d)).toISOString().replace(/\.\d{3}Z$/, "Z");
+
+  const getUserTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const getUserOffsetMinutes = () => new Date().getTimezoneOffset();
+
+  // ✅ REAL-TIME LOGGER (4.35.10)
+  const formatClock = (d = new Date()) => {
+    let h = d.getHours();
+    h = h % 12;
+    if (h === 0) h = 12;
+    return `${h}.${pad(d.getMinutes())}.${pad(d.getSeconds())}`;
+  };
+
+  const logClockAt = (label, atDate, extra = {}) => {
+    const d = atDate instanceof Date ? atDate : new Date();
+    console.log(
+      `⏱️ ${label} @ ${formatClock(d)} | iso=${d.toISOString()} | tz=${getUserTz()} | offsetMin=${getUserOffsetMinutes()}`,
+      extra
+    );
+  };
 
   const showToast = (message) => {
     const toast = document.createElement("div");
@@ -119,25 +148,42 @@ const ScreenshotApp = () => {
     }, 2500);
   };
 
+  const calcSecondsFrom = (segments, runningStart, now) => {
+    const base = (segments || []).reduce((acc, s) => {
+      const st = s?.startAt ? new Date(s.startAt).getTime() : 0;
+      const en = s?.endAt ? new Date(s.endAt).getTime() : 0;
+      if (st && en && en > st) return acc + Math.floor((en - st) / 1000);
+      return acc;
+    }, 0);
+
+    if (runningStart) {
+      const st = new Date(runningStart).getTime();
+      const en = new Date(now).getTime();
+      if (st && en && en > st) return base + Math.floor((en - st) / 1000);
+    }
+    return base;
+  };
+
+  // For UI (this current session only)
+  const activeSessionSeconds = useMemo(() => {
+    const now = new Date(uiNowMs);
+    return calcSecondsFrom(segmentsRef.current, startAtRef.current, now);
+  }, [uiNowMs]);
+
+  const rawSessionSeconds = useMemo(() => {
+    const now = new Date(uiNowMs);
+    return calcSecondsFrom(rawSegmentsRef.current, rawStartAtRef.current, now);
+  }, [uiNowMs]);
+
+  const idleSessionSeconds = Math.max(0, rawSessionSeconds - activeSessionSeconds);
+
+  // ✅ idle dialog actions (no duplicate deduction logic here)
   const handleIdleWasWorking = () => {
-    idle.confirmIdleDialog();
+    idle.confirmIdleAsWorking();
   };
 
   const handleIdleWasBreak = () => {
-    const deductionSeconds = idle.idleWarningSeconds || 0;
-    if (startAtRef.current) {
-      const newStart = new Date(
-        startAtRef.current.getTime() + deductionSeconds * 1000
-      );
-      startAtRef.current = newStart;
-    }
-    if (elapsedSecondsRef.current) {
-      elapsedSecondsRef.current = Math.max(
-        0,
-        elapsedSecondsRef.current - deductionSeconds
-      );
-    }
-    idle.confirmIdleDialog();
+    idle.applyBreakDeduction({ startAtRef, elapsedSecondsRef });
   };
 
   // approval
@@ -175,10 +221,10 @@ const ScreenshotApp = () => {
     }
   };
 
-  // preview setup (same logic, moved)
+  // preview setup
   useScreenPreview({ previewRef, videoRef, streamsRef });
 
-  // capture implementation (same evaluateAndCapture)
+  // capture implementation
   const evaluateAndCapture = useCallback(async () => {
     const videoElements = videoRef.current;
     if (!videoElements || videoElements.length < 2) return;
@@ -187,32 +233,15 @@ const ScreenshotApp = () => {
     const ctx = canvas.getContext("2d");
 
     const width = videoElements[0].videoWidth + videoElements[1].videoWidth;
-    const height = Math.max(
-      videoElements[0].videoHeight,
-      videoElements[1].videoHeight
-    );
+    const height = Math.max(videoElements[0].videoHeight, videoElements[1].videoHeight);
 
     canvas.width = width;
     canvas.height = height;
 
-    ctx.drawImage(
-      videoElements[0],
-      0,
-      0,
-      videoElements[0].videoWidth,
-      videoElements[0].videoHeight
-    );
-    ctx.drawImage(
-      videoElements[1],
-      videoElements[0].videoWidth,
-      0,
-      videoElements[1].videoWidth,
-      videoElements[1].videoHeight
-    );
+    ctx.drawImage(videoElements[0], 0, 0, videoElements[0].videoWidth, videoElements[0].videoHeight);
+    ctx.drawImage(videoElements[1], videoElements[0].videoWidth, 0, videoElements[1].videoWidth, videoElements[1].videoHeight);
 
-    const blob = await new Promise((resolve) =>
-      canvas.toBlob(resolve, "image/png")
-    );
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
     if (!blob) return;
 
     const arrayBuffer = await blob.arrayBuffer();
@@ -227,7 +256,7 @@ const ScreenshotApp = () => {
 
   const shots = useScreenshotCycle({ isCapturingRef, evaluateAndCapture });
 
-  // draft manager (same behavior, moved)
+  // draft manager (ACTIVE + RAW)
   const DRAFT_KEY = "taskData";
   const draft = useDraftManager({
     DRAFT_KEY,
@@ -248,8 +277,12 @@ const ScreenshotApp = () => {
 
     elapsedSecondsRef,
     setElapsedSeconds,
+
     segmentsRef,
     startAtRef,
+    rawSegmentsRef,
+    rawStartAtRef,
+
     isCapturingRef,
 
     taskData,
@@ -266,22 +299,27 @@ const ScreenshotApp = () => {
   // Filtered Tasks
   const filteredTasks = useMemo(() => {
     if (!selectedProjectId) return taskData;
-    return taskData.filter(
-      (tt) => String(tt.project_id) === String(selectedProjectId)
-    );
+    return taskData.filter((tt) => String(tt.project_id) === String(selectedProjectId));
   }, [taskData, selectedProjectId]);
 
   // If selected task disappears from filter
   useEffect(() => {
     if (
       selectedTaskId &&
-      !filteredTasks.some(
-        (tt) => String(getTaskId(tt)) === String(selectedTaskId)
-      )
+      !filteredTasks.some((tt) => String(getTaskId(tt)) === String(selectedTaskId))
     ) {
       setSelectedTaskId("");
       setSelectedTaskName("");
       setElapsedSeconds(0);
+
+      setSessionWindowStart(null);
+      setSessionWindowEnd(null);
+
+      startAtRef.current = null;
+      rawStartAtRef.current = null;
+
+      segmentsRef.current = [];
+      rawSegmentsRef.current = [];
     }
   }, [filteredTasks, selectedTaskId, setElapsedSeconds]);
 
@@ -289,16 +327,23 @@ const ScreenshotApp = () => {
   const handleTaskChange = (e) => {
     if (blockSelections) {
       showToast(
-        t("toast.approvalBlock", {
-          defaultValue: "Let Admin approve previous Payments before",
-        })
+        t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" })
       );
       return;
     }
 
     const newId = e.target.value;
-
     if (String(newId) === String(selectedTaskId)) return;
+
+    // reset session data when changing task
+    setSessionWindowStart(null);
+    setSessionWindowEnd(null);
+
+    startAtRef.current = null;
+    rawStartAtRef.current = null;
+
+    segmentsRef.current = [];
+    rawSegmentsRef.current = [];
 
     const prevId = selectedTaskId;
     if (prevId) updateTaskFlagger(prevId, 0);
@@ -315,6 +360,7 @@ const ScreenshotApp = () => {
 
     const serverTask =
       taskData.find((tt) => String(getTaskId(tt)) === String(newId)) || null;
+
     setSelectedTaskName(serverTask?.task_name ?? "");
     setElapsedSeconds(toSeconds(serverTask?.last_timing));
   };
@@ -322,39 +368,45 @@ const ScreenshotApp = () => {
   const handleProjectFilterChange = (e) => {
     if (blockSelections) {
       showToast(
-        t("toast.approvalBlock", {
-          defaultValue: "Let Admin approve previous Payments before",
-        })
+        t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" })
       );
       return;
     }
     setSelectedProjectId(e.target.value);
   };
 
-  // Start / Pause / Resume (same logic)
+  // Start
   const handleStart = async () => {
+    const clickedAt = new Date();
+    logClockAt("START RECORDING clicked", clickedAt, {
+      selectedTaskId,
+      selectedProjectId,
+      isCapturing,
+      isPaused,
+    });
+
     if (isFreelancer && currUser?.user_id) {
       const allowed = await fetchApprovalStatus(currUser.user_id);
       if (!allowed) {
         showToast(
-          t("toast.approvalBlock", {
-            defaultValue: "Let Admin approve previous Payments before",
-          })
+          t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" })
         );
         return;
       }
     }
 
     if (!selectedTaskId) {
-      showToast(
-        t("toast.selectTaskFirst", {
-          defaultValue: "⚠ Please select a task before starting!",
-        })
-      );
+      showToast(t("toast.selectTaskFirst", { defaultValue: "⚠ Please select a task before starting!" }));
       return;
     }
 
-    startAtRef.current = new Date();
+    // set RAW + ACTIVE start at click-time
+    startAtRef.current = clickedAt;      // active start (adjusted later for break)
+    rawStartAtRef.current = clickedAt;   // raw start (never adjusted)
+
+    if (!sessionWindowStart) setSessionWindowStart(clickedAt);
+    setSessionWindowEnd(null);
+
     idle.resetIdleCounters();
 
     if (!isCapturing) {
@@ -366,23 +418,36 @@ const ScreenshotApp = () => {
     }
   };
 
+  // Pause
   const handlePause = () => {
+    const pausedAt = new Date();
+
     if (isFreelancer && approvalStatus === 1) {
       showToast(
-        t("toast.approvalBlock", {
-          defaultValue: "Let Admin approve previous Payments before",
-        })
+        t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" })
       );
       return;
     }
 
+    // ACTIVE segment
     if (startAtRef.current) {
       segmentsRef.current.push({
         startAt: new Date(startAtRef.current),
-        endAt: new Date(),
+        endAt: pausedAt,
       });
       startAtRef.current = null;
     }
+
+    // RAW segment
+    if (rawStartAtRef.current) {
+      rawSegmentsRef.current.push({
+        startAt: new Date(rawStartAtRef.current),
+        endAt: pausedAt,
+      });
+      rawStartAtRef.current = null;
+    }
+
+    setSessionWindowEnd(pausedAt);
 
     setIsCapturing(false);
     setIsPaused(true);
@@ -390,25 +455,31 @@ const ScreenshotApp = () => {
     idle.stopSampling();
     shots.stopScreenshotCycle();
 
-    if (selectedTaskId && segmentsRef.current.length > 0) {
+    if (selectedTaskId && (rawSegmentsRef.current || []).length > 0) {
       draft.persistDraft(true);
     }
   };
 
+  // Resume
   const handleResume = async () => {
+    const resumedAt = new Date();
+
     if (isFreelancer && currUser?.user_id) {
       const allowed = await fetchApprovalStatus(currUser.user_id);
       if (!allowed) {
         showToast(
-          t("toast.approvalBlock", {
-            defaultValue: "Let Admin approve previous Payments before",
-          })
+          t("toast.approvalBlock", { defaultValue: "Let Admin approve previous Payments before" })
         );
         return;
       }
     }
 
-    startAtRef.current = new Date();
+    startAtRef.current = resumedAt;
+    rawStartAtRef.current = resumedAt;
+
+    if (!sessionWindowStart) setSessionWindowStart(resumedAt);
+    setSessionWindowEnd(null);
+
     setIsCapturing(true);
     setIsPaused(false);
     startTimer();
@@ -416,25 +487,42 @@ const ScreenshotApp = () => {
     shots.startScreenshotCycle();
   };
 
-  // SUBMIT (same logic)
+  // Finish (Submit)
   const handleFinish = async (opts = {}) => {
     const silentAutoSubmit = !!opts.silentAutoSubmit;
+    const submitClickedAt = new Date();
 
+    // close running segments at exact submit click time
     if (startAtRef.current) {
       segmentsRef.current.push({
         startAt: new Date(startAtRef.current),
-        endAt: new Date(),
+        endAt: submitClickedAt,
       });
       startAtRef.current = null;
     }
+    if (rawStartAtRef.current) {
+      rawSegmentsRef.current.push({
+        startAt: new Date(rawStartAtRef.current),
+        endAt: submitClickedAt,
+      });
+      rawStartAtRef.current = null;
+    }
 
-    if (segmentsRef.current.length === 0) {
+    setSessionWindowEnd(submitClickedAt);
+
+    // logger after finalize
+    logClockAt("SUBMIT clicked", submitClickedAt, {
+      silentAutoSubmit,
+      selectedTaskId,
+      selectedProjectId,
+      activeSegmentsCount: segmentsRef.current?.length || 0,
+      rawSegmentsCount: rawSegmentsRef.current?.length || 0,
+    });
+
+    // Gate on RAW window existence
+    if ((rawSegmentsRef.current || []).length === 0) {
       if (!silentAutoSubmit) {
-        showToast(
-          t("toast.noTimeCaptured", {
-            defaultValue: "No time captured. Please Start first.",
-          })
-        );
+        showToast(t("toast.noTimeCaptured", { defaultValue: "No time captured. Please Start first." }));
       }
       return;
     }
@@ -445,15 +533,11 @@ const ScreenshotApp = () => {
     idle.stopSampling();
     shots.stopScreenshotCycle();
 
-    const theTask = taskData.find(
-      (tt) => String(getTaskId(tt)) === String(selectedTaskId)
-    );
+    const theTask = taskData.find((tt) => String(getTaskId(tt)) === String(selectedTaskId));
     if (!theTask) {
       draft.persistDraft(true, { reason: "task_not_found" });
       if (!silentAutoSubmit) {
-        showToast(
-          t("toast.taskNotFound", { defaultValue: "Selected task not found." })
-        );
+        showToast(t("toast.taskNotFound", { defaultValue: "Selected task not found." }));
       }
       return;
     }
@@ -464,26 +548,96 @@ const ScreenshotApp = () => {
     const user_tz = getUserTz();
     const user_offset_minutes = getUserOffsetMinutes();
 
+    // ✅ FINAL logger
+    const finalActiveSeconds = calcSecondsFrom(segmentsRef.current, null, submitClickedAt);
+    const finalRawSeconds = calcSecondsFrom(rawSegmentsRef.current, null, submitClickedAt);
+    const finalIdleSeconds = Math.max(0, finalRawSeconds - finalActiveSeconds);
+
+    const rawStarts = (rawSegmentsRef.current || [])
+      .map((s) => (s?.startAt ? new Date(s.startAt).getTime() : null))
+      .filter(Boolean);
+    const rawEnds = (rawSegmentsRef.current || [])
+      .map((s) => (s?.endAt ? new Date(s.endAt).getTime() : null))
+      .filter(Boolean);
+
+    const actualStartIso = rawStarts.length ? new Date(Math.min(...rawStarts)).toISOString() : null;
+    const actualEndIso = rawEnds.length ? new Date(Math.max(...rawEnds)).toISOString() : null;
+
+    console.log("✅ FINAL (Actual window vs Active time) -------------------");
+    console.log("actual_start (RAW):", actualStartIso);
+    console.log("actual_end   (RAW):", actualEndIso);
+    console.log("raw_session_seconds:", finalRawSeconds);
+    console.log("active_session_seconds:", finalActiveSeconds);
+    console.log("idle_deducted_seconds:", finalIdleSeconds);
     console.log(
-      "🟢 Submitting segments: from direct save.............",
-      segmentsRef.current
+      "RAW segments:",
+      (rawSegmentsRef.current || []).map((s, i) => ({
+        i: i + 1,
+        startAt: new Date(s.startAt).toISOString(),
+        endAt: new Date(s.endAt).toISOString(),
+        seconds: Math.floor((new Date(s.endAt) - new Date(s.startAt)) / 1000),
+      }))
     );
-    //----------------------------------------------------------------------------
-    const rows = segmentsRef.current
-      .filter((s) => s.startAt && s.endAt && s.endAt > s.startAt)
-      .map((seg) => ({
+    console.log(
+      "ACTIVE segments (adjusted):",
+      (segmentsRef.current || []).map((s, i) => ({
+        i: i + 1,
+        startAt: new Date(s.startAt).toISOString(),
+        endAt: new Date(s.endAt).toISOString(),
+        seconds: Math.floor((new Date(s.endAt) - new Date(s.startAt)) / 1000),
+      }))
+    );
+    console.log("----------------------------------------------------------");
+
+    // ✅ Build rows using RAW start/end, and include active_seconds/tracked_seconds
+    const rawSegs = rawSegmentsRef.current || [];
+    const actSegs = segmentsRef.current || [];
+
+    const rows = [];
+    for (let i = 0; i < rawSegs.length; i++) {
+      const raw = rawSegs[i];
+      const act = actSegs[i];
+
+      const rawSt = raw?.startAt ? new Date(raw.startAt).getTime() : 0;
+      const rawEn = raw?.endAt ? new Date(raw.endAt).getTime() : 0;
+      if (!rawSt || !rawEn || rawEn <= rawSt) continue;
+
+      const window_seconds = Math.floor((rawEn - rawSt) / 1000);
+
+      let active_seconds = window_seconds;
+      const actSt = act?.startAt ? new Date(act.startAt).getTime() : 0;
+      const actEn = act?.endAt ? new Date(act.endAt).getTime() : 0;
+      if (actSt && actEn && actEn > actSt) {
+        active_seconds = Math.floor((actEn - actSt) / 1000);
+      }
+      active_seconds = Math.max(0, Math.min(active_seconds, window_seconds));
+      const idle_seconds = Math.max(0, window_seconds - active_seconds);
+
+      rows.push({
         task_id: Number(getTaskId(theTask)),
         project_id: Number(theTask.project_id),
         developer_id: developerId || null,
-        work_date: formatDateYMD(seg.startAt),
-        task_start: toIsoNoMs(seg.startAt),
-        task_end: toIsoNoMs(seg.endAt),
+        work_date: formatDateYMD(new Date(rawSt)),
+        task_start: toIsoNoMs(new Date(rawSt)), // RAW
+        task_end: toIsoNoMs(new Date(rawEn)),   // RAW
         tenant_id: tenant_id_local || null,
         user_tz,
         user_offset_minutes,
-      }));
 
-    if (rows.length === 0) return;
+        window_seconds,
+        active_seconds,
+        idle_seconds,
+        tracked_seconds: active_seconds, // ✅ this is what you said you need
+      });
+    }
+
+    if (rows.length === 0) {
+      if (!silentAutoSubmit) {
+        showToast(t("toast.noTimeCaptured", { defaultValue: "No time captured. Please Start first." }));
+      }
+      return;
+    }
+
     const bodyToSend = rows.length === 1 ? rows[0] : rows;
 
     try {
@@ -494,23 +648,22 @@ const ScreenshotApp = () => {
         body: JSON.stringify(bodyToSend),
       });
 
-      const ttData = await ttRes.json();
+      const ttData = await ttRes.json().catch(() => ({}));
       if (!ttRes.ok) {
         draft.persistDraft(true, { reason: "submit_failed" });
         if (!silentAutoSubmit) {
           showToast(
             ttData?.error ||
-              t("toast.submitFailed", {
-                defaultValue: "Failed to submit time tracking.",
-              })
+              t("toast.submitFailed", { defaultValue: "Failed to submit time tracking." })
           );
           setShowFinishConfirm(true);
         }
         return;
       }
 
+      // ✅ Update task last_timing using ACTIVE seconds
       const baseSeconds = toSeconds(theTask?.last_timing);
-      const segSeconds = (segmentsRef.current || []).reduce((acc, s) => {
+      const segSecondsActive = (segmentsRef.current || []).reduce((acc, s) => {
         const st = s?.startAt ? new Date(s.startAt).getTime() : 0;
         const en = s?.endAt ? new Date(s.endAt).getTime() : 0;
         if (st && en && en > st) return acc + Math.floor((en - st) / 1000);
@@ -519,9 +672,7 @@ const ScreenshotApp = () => {
 
       const totalSeconds = Math.max(
         0,
-        Math.floor(
-          Math.max(elapsedSecondsRef.current, baseSeconds + segSeconds)
-        )
+        Math.floor(Math.max(elapsedSecondsRef.current, baseSeconds + segSecondsActive))
       );
 
       await fetch(`${API_BASE}/api/tasks/task-update/${selectedTaskId}`, {
@@ -537,12 +688,12 @@ const ScreenshotApp = () => {
       await updateTaskFlagger(selectedTaskId, 0);
 
       if (!silentAutoSubmit) {
-        showToast(
-          t("toast.timeSaved", { defaultValue: "Time tracking saved!" })
-        );
+        showToast(t("toast.timeSaved", { defaultValue: "Time tracking saved!" }));
       }
 
+      // clear session buffers
       segmentsRef.current = [];
+      rawSegmentsRef.current = [];
       draft.clearDraft();
 
       setIsCapturing(false);
@@ -553,21 +704,25 @@ const ScreenshotApp = () => {
       draft.persistDraft(true, { reason: "submit_network_error" });
       if (!silentAutoSubmit) {
         showToast(
-          t("toast.submitNetworkError", {
-            defaultValue: "Network error submitting time tracking.",
-          })
+          t("toast.submitNetworkError", { defaultValue: "Network error submitting time tracking." })
         );
       }
     } finally {
       setSelectedTaskId("");
       setSelectedTaskName("");
       setElapsedSeconds(0);
+
       segmentsRef.current = [];
+      rawSegmentsRef.current = [];
+
       setSelectedProjectId("");
+
+      setSessionWindowStart(null);
+      setSessionWindowEnd(null);
     }
   };
 
-  // Quit / Logout (same behavior)
+  // Quit / Logout
   const handleQuit = () => setShowQuitConfirm(true);
   const confirmQuit = () => {
     if (isCapturing) handlePause();
@@ -590,10 +745,7 @@ const ScreenshotApp = () => {
 
   const handleLogout = async () => {
     try {
-      await fetch(`${API_BASE}/api/logout`, {
-        method: "POST",
-        credentials: "include",
-      }).catch(() => {});
+      await fetch(`${API_BASE}/api/logout`, { method: "POST", credentials: "include" }).catch(() => {});
       localStorage.removeItem("user_id");
       localStorage.removeItem("auth_name");
       localStorage.removeItem("user_name");
@@ -626,13 +778,7 @@ const ScreenshotApp = () => {
       {
         key: "tasks",
         labelKey: "sidebar.tasks",
-        children: [
-          {
-            key: "create-task",
-            labelKey: "sidebar.createTask",
-            action: "create-task",
-          },
-        ],
+        children: [{ key: "create-task", labelKey: "sidebar.createTask", action: "create-task" }],
       },
       { key: "settings", labelKey: "sidebar.settings" },
     ],
@@ -671,9 +817,7 @@ const ScreenshotApp = () => {
       <main className="app-main">
         <ConfirmDialog
           open={showFinishConfirm}
-          title={t("confirm.taskFinished.title", {
-            defaultValue: "Task Finished",
-          })}
+          title={t("confirm.taskFinished.title", { defaultValue: "Task Finished" })}
           subtitle={t("confirm.taskFinished.subtitle", {
             defaultValue: "Your task has been completed and saved.",
           })}
@@ -709,8 +853,7 @@ const ScreenshotApp = () => {
           subtitle={
             isCapturing
               ? t("confirm.logout.subtitleRunning", {
-                  defaultValue:
-                    "Capture is currently running. We’ll stop it before logging out.",
+                  defaultValue: "Capture is currently running. We’ll stop it before logging out.",
                 })
               : ""
           }
@@ -724,66 +867,55 @@ const ScreenshotApp = () => {
           open={idle.idleWarningOpen}
           title={t("idle.title", { defaultValue: "You are idle" })}
           subtitle={t("idle.subtitle", {
-            defaultValue: `You have been idle for ${formatTime(
-              idle.idleWarningSeconds
-            )}.`,
+            defaultValue: `You have been idle for ${formatTime(idle.idleWarningSeconds)}.`,
           })}
-          cancelText={t("confirm.I was in a break", {
-            defaultValue: "I was in a break",
-          })}
+          cancelText={t("confirm.I was in a break", { defaultValue: "I was in a break" })}
           onCancel={handleIdleWasBreak}
           okText={t("confirm.I was working", { defaultValue: "I was working" })}
           onConfirm={handleIdleWasWorking}
         />
 
-        <DashboardHeader
-          t={t}
-          user_name={user_name}
-          getRoleLower={getRoleLower}
-        />
+        <DashboardHeader t={t} user_name={user_name} getRoleLower={getRoleLower} />
 
         <section className="dashboard-grid">
           <div className="dg-left">
             <div className="summary-row">
               <div className="summary-card">
                 <span className="summary-label">
-                  {t("dashboard.summary.status.label", {
-                    defaultValue: "Current Status",
-                  })}
+                  {t("dashboard.summary.status.label", { defaultValue: "Current Status" })}
                 </span>
                 <span className="summary-value status-running">
                   {isCapturing
-                    ? t("dashboard.summary.status.recording", {
-                        defaultValue: "Recording",
-                      })
+                    ? t("dashboard.summary.status.recording", { defaultValue: "Recording" })
                     : isPaused
-                    ? t("dashboard.summary.status.paused", {
-                        defaultValue: "Paused",
-                      })
-                    : t("dashboard.summary.status.idle", {
-                        defaultValue: "Idle",
-                      })}
+                    ? t("dashboard.summary.status.paused", { defaultValue: "Paused" })
+                    : t("dashboard.summary.status.idle", { defaultValue: "Idle" })}
                 </span>
                 <span className="summary-sub">
-                  {t("dashboard.summary.status.sub", {
-                    defaultValue: "Live capture with idle detection",
-                  })}
+                  {t("dashboard.summary.status.sub", { defaultValue: "Live capture with idle detection" })}
                 </span>
               </div>
 
+              {/* Existing total counter */}
               <div className="summary-card">
                 <span className="summary-label">
-                  {t("dashboard.summary.today.label", {
-                    defaultValue: "Today's Time",
-                  })}
+                  {t("dashboard.summary.today.label", { defaultValue: "Today's Time" })}
                 </span>
+                <span className="summary-value">{formatTime(elapsedSeconds)}</span>
+                <span className="summary-sub">
+                  {t("dashboard.summary.today.sub", { defaultValue: "Session duration" })}
+                </span>
+              </div>
+
+              {/* NEW: Actual window (RAW) + Active/Idle */}
+              <div className="summary-card">
+                <span className="summary-label">Session (Actual Window)</span>
                 <span className="summary-value">
-                  {formatTime(elapsedSeconds)}
+                  {sessionWindowStart ? formatClock(sessionWindowStart) : "--"} →{" "}
+                  {sessionWindowEnd ? formatClock(sessionWindowEnd) : isCapturing ? formatClock(new Date(uiNowMs)) : "--"}
                 </span>
                 <span className="summary-sub">
-                  {t("dashboard.summary.today.sub", {
-                    defaultValue: "Session duration",
-                  })}
+                  Active: {formatTime(activeSessionSeconds)} | Idle deducted: {formatTime(idleSessionSeconds)}
                 </span>
               </div>
             </div>
