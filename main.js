@@ -1,21 +1,18 @@
 const { app, BrowserWindow, ipcMain, session, desktopCapturer, powerMonitor } = require("electron");
 const path = require("path");
-const fetch = require("node-fetch"); // v2
+const fetch = require("node-fetch");
 const FormData = require("form-data");
 
-// Add a debug log to ensure the main process is starting
 console.log("✅ Main process starting...");
 
-// Load .env only in development
 if (!app.isPackaged) {
   require("dotenv").config();
 }
 
-// This function is triggered when the app is ready
-function createWindow() {
-  console.log("Inside createWindow function...");
+let mainWindow; // ✅ ADD THIS
 
-  const win = new BrowserWindow({
+function createWindow() {
+  mainWindow = new BrowserWindow({
     width: 1000,
     height: 750,
     icon: path.join(__dirname, "assets", "icons", "iconwin.ico"),
@@ -26,51 +23,115 @@ function createWindow() {
     },
   });
 
-  console.log("Creating BrowserWindow...");
-
   if (!app.isPackaged) {
-    console.log("Loading React app from http://localhost:3000...");
-    win.loadURL("http://localhost:3000");
-    win.webContents.openDevTools();  // Open Developer Tools for debugging
-  } else {
-    console.log("Loading production build...");
-    win.loadFile(path.join(__dirname, "build", "index.html"));
-  }
+    mainWindow.loadURL("http://localhost:3000");
 
-  console.log("BrowserWindow created and page loaded!");
-}
-
-// This will be called when the app is ready
-app.whenReady().then(() => {
-  console.log("App is ready! Creating the window now...");
-  createWindow();
+    mainWindow.on("blur", () => {
+  try {
+    mainWindow.webContents.send("force-pause");
+  } catch {}
 });
 
-// If all windows are closed, quit the app (except on macOS)
+mainWindow.on("minimize", () => {
+  try {
+    mainWindow.webContents.send("force-pause");
+  } catch {}
+});
+
+    mainWindow.webContents.openDevTools();
+  } else {
+    mainWindow.loadFile(path.join(__dirname, "build", "index.html"));
+  }
+
+  console.log("Main window created!");
+}
+
+/* ===========================
+   🔥 URGENT WINDOW CONTROL
+   =========================== */
+
+function bringWindowToFrontUrgent() {
+  if (!mainWindow) return;
+
+  try {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+
+    mainWindow.show();
+    mainWindow.focus();
+
+    // strongest safe level
+    mainWindow.setAlwaysOnTop(true, "screen-saver");
+
+    // ensure visibility everywhere
+    mainWindow.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+    });
+
+    // nudge window managers
+    mainWindow.moveTop();
+
+    // taskbar / dock attention
+    mainWindow.flashFrame(true);
+
+  } catch (e) {
+    console.error("Urgent bring-to-front failed:", e);
+  }
+}
+
+function clearUrgentMode() {
+  if (!mainWindow) return;
+
+  try {
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setVisibleOnAllWorkspaces(false);
+    mainWindow.flashFrame(false);
+  } catch {}
+}
+
+/* ===========================
+   IPC
+   =========================== */
+
+ipcMain.handle("urgent:show", () => {
+  bringWindowToFrontUrgent();
+  return true;
+});
+
+ipcMain.handle("urgent:clear", () => {
+  clearUrgentMode();
+  return true;
+});
+
+/* ===========================
+   APP LIFECYCLE
+   =========================== */
+
+app.whenReady().then(() => {
+  createWindow();
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-// On macOS, recreate a window when the app is activated
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});
+/* ===========================
+   EXISTING IPC — UNTOUCHED
+   =========================== */
 
-// IPC Handlers (for communication with renderer process)
-
-// Handling idle time request
 ipcMain.handle("get-idle-time", () => {
-  console.log("Handling get-idle-time request...");
   return powerMonitor.getSystemIdleTime();
 });
 
-// Handling screen source request
 ipcMain.handle("get-sources", async () => {
-  console.log("Handling get-sources request...");
   return await desktopCapturer.getSources({ types: ["screen"] });
 });
 
-// Handling screenshot upload request
 ipcMain.handle("save-image", async (_event, buffer) => {
   const filename = `screenshot-${Date.now()}.png`;
   const form = new FormData();
@@ -87,44 +148,22 @@ ipcMain.handle("save-image", async (_event, buffer) => {
     const result = await response.json();
 
     if (result.success) {
-      const fullUrl = `https://chat.mcqstudy.com${result.path}`;
-      console.log(`✅ Screenshot uploaded: ${fullUrl}`);
-      return { success: true, path: fullUrl };
-    } else {
-      console.error("❌ Upload failed:", result.error);
-      return { success: false };
+      return { success: true, path: `https://chat.mcqstudy.com${result.path}` };
     }
-  } catch (error) {
-    console.error("❌ Upload error:", error);
+    return { success: false };
+  } catch {
     return { success: false };
   }
 });
 
-// Add IPC handler to retrieve the token cookie and log it in the console
 ipcMain.handle("get-token-cookie", async () => {
   try {
-    console.log("Retrieving cookies for http://localhost:5500...");
-    // console.log("Retrieving cookies for https://taskpro.twinstack.net...");
-    
-
-    // Retrieve cookies for the given URL (replace with your actual domain)
-    const cookies = await session.defaultSession.cookies.get({ url: 'http://localhost:5500' });
-    // const cookies = await session.defaultSession.cookies.get({ url: 'https://taskpro.twinstack.net' });
-
-    // Log all cookies to debug
-    // console.log('Cookies retrieved:', cookies);
-
-    // Find the token cookie
-    const tokenCookie = cookies.find(cookie => cookie.name === 'token');
-    if (tokenCookie) {
-      // console.log('Token cookie found:', tokenCookie.value); 
-      return tokenCookie.value; // Return token to renderer process if needed
-    } else {
-      console.log('Token cookie not found');
-      return null; // Return null if token not found
-    }
-  } catch (error) {
-    console.error('Error retrieving cookies:', error);
-    return null; // Return null in case of error
+    const cookies = await session.defaultSession.cookies.get({
+      url: "http://localhost:5500",
+    });
+    const tokenCookie = cookies.find((c) => c.name === "token");
+    return tokenCookie ? tokenCookie.value : null;
+  } catch {
+    return null;
   }
 });

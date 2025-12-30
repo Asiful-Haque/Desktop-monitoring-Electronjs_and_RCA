@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSources: () => ipcRenderer.invoke('get-sources'),
   saveImage: (buffer) => ipcRenderer.invoke('save-image', buffer),
   getIdleTime: () => ipcRenderer.invoke('get-idle-time'),
-  getTokenCookie: () => ipcRenderer.invoke('get-token-cookie')
+  getTokenCookie: () => ipcRenderer.invoke('get-token-cookie'),
+  urgentShow: () => ipcRenderer.invoke("urgent:show"),
+  urgentClear: () => ipcRenderer.invoke("urgent:clear"),
 });
+
 

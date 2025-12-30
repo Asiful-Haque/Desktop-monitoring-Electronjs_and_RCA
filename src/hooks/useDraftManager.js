@@ -11,7 +11,7 @@ export default function useDraftManager({
   selectedTaskName,
   setSelectedTaskId,
   setSelectedTaskName,
-  setSelectedProjectId, // (kept)
+  setSelectedProjectId,
   setIsCapturing,
   setIsPaused,
   isCapturing,
@@ -24,7 +24,7 @@ export default function useDraftManager({
   startAtRef,
   isCapturingRef,
 
-  // ✅ NEW: refs (RAW)
+  // refs (RAW)
   rawSegmentsRef,
   rawStartAtRef,
 
@@ -58,10 +58,6 @@ export default function useDraftManager({
 
   const disableDraftWritesRef = useRef(false);
 
-  // ✅ safe fallbacks (backward compatible)
-  const rawSegmentsRefSafe = rawSegmentsRef || segmentsRef;
-  const rawStartAtRefSafe = rawStartAtRef || startAtRef;
-
   const clearDraft = () => {
     try {
       localStorage.removeItem(DRAFT_KEY);
@@ -70,12 +66,27 @@ export default function useDraftManager({
     restoredDraftRef.current = null;
   };
 
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const formatClock = (d = new Date()) => {
+    let h = d.getHours();
+    h = h % 12;
+    if (h === 0) h = 12;
+    return `${h}.${pad2(d.getMinutes())}.${pad2(d.getSeconds())}`;
+  };
+
+  const logClockAt = (label, atDate, extra = {}) => {
+    const d = atDate instanceof Date ? atDate : new Date();
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const offsetMin = new Date().getTimezoneOffset();
+    console.log(
+      `⏱️ ${label} @ ${formatClock(d)} | iso=${d.toISOString()} | tz=${tz} | offsetMin=${offsetMin}`,
+      extra
+    );
+  };
+
   const formatDateYMD = (date) => {
     const dt = date instanceof Date ? date : new Date(date);
-    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(
-      2,
-      "0"
-    )}-${String(dt.getDate()).padStart(2, "0")}`;
+    return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
   };
 
   const toIsoNoMs = (d) =>
@@ -87,7 +98,81 @@ export default function useDraftManager({
     Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const getUserOffsetMinutes = () => new Date().getTimezoneOffset();
 
-  // ✅ Save draft to localStorage (ACTIVE + RAW)
+  const secondsBetween = (a, b) => {
+    const st = a ? new Date(a).getTime() : 0;
+    const en = b ? new Date(b).getTime() : 0;
+    if (!st || !en || en <= st) return 0;
+    return Math.floor((en - st) / 1000);
+  };
+
+  const buildSegmentBreakdown = (rawSegs = [], activeSegs = []) => {
+    const count = Math.max(rawSegs.length, activeSegs.length);
+
+    const perSegment = [];
+    let rawTotal = 0;
+    let activeTotal = 0;
+
+    for (let i = 0; i < count; i++) {
+      const r = rawSegs[i] || null;
+      const a = activeSegs[i] || null;
+
+      const rawStart = r?.startAt ? new Date(r.startAt) : null;
+      const rawEnd = r?.endAt ? new Date(r.endAt) : null;
+
+      const activeStart = a?.startAt ? new Date(a.startAt) : null;
+      const activeEnd = a?.endAt ? new Date(a.endAt) : null;
+
+      const rawSec = rawStart && rawEnd ? secondsBetween(rawStart, rawEnd) : 0;
+      const activeSec =
+        activeStart && activeEnd ? secondsBetween(activeStart, activeEnd) : 0;
+
+      const idleSec = Math.max(0, rawSec - activeSec);
+
+      rawTotal += rawSec;
+      activeTotal += activeSec;
+
+      perSegment.push({
+        segment_index: i + 1,
+        raw_task_start: rawStart ? rawStart.toISOString() : null,
+        raw_task_end: rawEnd ? rawEnd.toISOString() : null,
+        task_start: activeStart ? activeStart.toISOString() : null,
+        task_end: activeEnd ? activeEnd.toISOString() : null,
+        raw_seconds: rawSec,
+        active_seconds: activeSec,
+        idle_deducted_seconds: idleSec,
+      });
+    }
+
+    return {
+      perSegment,
+      raw_session_seconds: rawTotal,
+      active_session_seconds: activeTotal,
+      idle_deducted_seconds: Math.max(0, rawTotal - activeTotal),
+    };
+  };
+
+  const logSegmentBreakdown = (label, breakdown) => {
+    console.log(`✅ ${label} -------------------`);
+    console.log("raw_session_seconds:", breakdown.raw_session_seconds);
+    console.log("active_session_seconds:", breakdown.active_session_seconds);
+    console.log("idle_deducted_seconds:", breakdown.idle_deducted_seconds);
+
+    console.table(
+      (breakdown.perSegment || []).map((x) => ({
+        segment_index: x.segment_index,
+        raw_task_start: x.raw_task_start,
+        raw_task_end: x.raw_task_end,
+        active_task_start: x.task_start,
+        active_task_end: x.task_end,
+        raw_seconds: x.raw_seconds,
+        active_seconds: x.active_seconds,
+        idle_deducted_seconds: x.idle_deducted_seconds,
+      }))
+    );
+    console.log("---------------------------------------");
+  };
+
+  // ✅ Save draft to localStorage (always ISO strings)
   const persistDraft = (forcePending = true, meta = {}) => {
     if (disableDraftWritesRef.current) return;
 
@@ -97,28 +182,26 @@ export default function useDraftManager({
         selectedTaskName,
         elapsedSeconds: elapsedSecondsRef.current,
 
-        // ACTIVE segments (idle deductions applied)
+        // ACTIVE segments
         segments: (segmentsRef.current || []).map((s) => ({
           startAt: (s?.startAt instanceof Date ? s.startAt : new Date(s.startAt)).toISOString(),
           endAt: (s?.endAt instanceof Date ? s.endAt : new Date(s.endAt)).toISOString(),
         })),
-
-        // RAW segments (never adjusted)
-        rawSegments: (rawSegmentsRefSafe.current || []).map((s) => ({
-          startAt: (s?.startAt instanceof Date ? s.startAt : new Date(s.startAt)).toISOString(),
-          endAt: (s?.endAt instanceof Date ? s.endAt : new Date(s.endAt)).toISOString(),
-        })),
-
         openStartAt: startAtRef.current
           ? (startAtRef.current instanceof Date
               ? startAtRef.current.toISOString()
               : new Date(startAtRef.current).toISOString())
           : null,
 
-        openRawStartAt: rawStartAtRefSafe.current
-          ? (rawStartAtRefSafe.current instanceof Date
-              ? rawStartAtRefSafe.current.toISOString()
-              : new Date(rawStartAtRefSafe.current).toISOString())
+        // RAW segments
+        rawSegments: (rawSegmentsRef?.current || []).map((s) => ({
+          startAt: (s?.startAt instanceof Date ? s.startAt : new Date(s.startAt)).toISOString(),
+          endAt: (s?.endAt instanceof Date ? s.endAt : new Date(s.endAt)).toISOString(),
+        })),
+        rawOpenStartAt: rawStartAtRef?.current
+          ? (rawStartAtRef.current instanceof Date
+              ? rawStartAtRef.current.toISOString()
+              : new Date(rawStartAtRef.current).toISOString())
           : null,
 
         isCapturing,
@@ -150,15 +233,15 @@ export default function useDraftManager({
       }
 
       // close RAW open segment
-      if (isCapturingRef.current && rawStartAtRefSafe.current) {
-        rawSegmentsRefSafe.current.push({
-          startAt: new Date(rawStartAtRefSafe.current),
+      if (isCapturingRef.current && rawStartAtRef?.current) {
+        rawSegmentsRef.current.push({
+          startAt: new Date(rawStartAtRef.current),
           endAt: end,
         });
-        rawStartAtRefSafe.current = null;
+        rawStartAtRef.current = null;
       }
 
-      if (selectedTaskId && (rawSegmentsRefSafe.current || []).length > 0) {
+      if (selectedTaskId && (segmentsRef.current || []).length > 0) {
         persistDraft(true, { reason });
       }
     } catch (e) {
@@ -170,7 +253,6 @@ export default function useDraftManager({
     try {
       const end = new Date();
 
-      // close ACTIVE
       if (startAtRef.current) {
         segmentsRef.current.push({
           startAt: new Date(startAtRef.current),
@@ -179,13 +261,12 @@ export default function useDraftManager({
         startAtRef.current = null;
       }
 
-      // close RAW
-      if (rawStartAtRefSafe.current) {
-        rawSegmentsRefSafe.current.push({
-          startAt: new Date(rawStartAtRefSafe.current),
+      if (rawStartAtRef?.current) {
+        rawSegmentsRef.current.push({
+          startAt: new Date(rawStartAtRef.current),
           endAt: end,
         });
-        rawStartAtRefSafe.current = null;
+        rawStartAtRef.current = null;
       }
 
       if (isCapturingRef.current) {
@@ -196,7 +277,7 @@ export default function useDraftManager({
         stopScreenshotCycle();
       }
 
-      if (selectedTaskId && (rawSegmentsRefSafe.current || []).length > 0) {
+      if (selectedTaskId && (segmentsRef.current || []).length > 0) {
         persistDraft(true, { reason });
       }
     } catch (e) {
@@ -211,63 +292,99 @@ export default function useDraftManager({
 
     try {
       const parsedData = JSON.parse(cachedData);
-      if (!parsedData?.selectedTaskId) return;
 
-      setSelectedTaskId(parsedData.selectedTaskId || "");
-      setSelectedTaskName(parsedData.selectedTaskName || "");
-      setElapsedSeconds(parsedData.elapsedSeconds || 0);
+      if (parsedData && parsedData.selectedTaskId) {
+        setSelectedTaskId(parsedData.selectedTaskId || "");
+        setSelectedTaskName(parsedData.selectedTaskName || "");
+        setElapsedSeconds(parsedData.elapsedSeconds || 0);
 
-      // ACTIVE segments
-      const restoredActive = (parsedData.segments || []).map((s) => ({
-        startAt: new Date(s.startAt),
-        endAt: new Date(s.endAt),
-      }));
+        // ACTIVE restore
+        const restoredSegments = (parsedData.segments || []).map((s) => ({
+          startAt: new Date(s.startAt),
+          endAt: new Date(s.endAt),
+        }));
 
-      // RAW segments (fallback to ACTIVE for old drafts)
-      const restoredRaw = (parsedData.rawSegments || parsedData.segments || []).map((s) => ({
-        startAt: new Date(s.startAt),
-        endAt: new Date(s.endAt),
-      }));
+        // RAW restore (fallback to ACTIVE if not present)
+        const restoredRawSegments = (
+          parsedData.rawSegments ||
+          parsedData.segments ||
+          []
+        ).map((s) => ({
+          startAt: new Date(s.startAt),
+          endAt: new Date(s.endAt),
+        }));
 
-      // If capturing when saved, close open segment using savedAt
-      if (parsedData.savedAt && parsedData.isCapturing && !parsedData.isPaused) {
-        if (parsedData.openStartAt) {
-          restoredActive.push({
+        // if saved while capturing, close open segment to savedAt
+        if (
+          parsedData.openStartAt &&
+          parsedData.isCapturing &&
+          !parsedData.isPaused &&
+          parsedData.savedAt
+        ) {
+          restoredSegments.push({
             startAt: new Date(parsedData.openStartAt),
             endAt: new Date(parsedData.savedAt),
           });
         }
-        if (parsedData.openRawStartAt) {
-          restoredRaw.push({
-            startAt: new Date(parsedData.openRawStartAt),
+
+        // RAW open segment close
+        if (
+          parsedData.rawOpenStartAt &&
+          parsedData.isCapturing &&
+          !parsedData.isPaused &&
+          parsedData.savedAt
+        ) {
+          restoredRawSegments.push({
+            startAt: new Date(parsedData.rawOpenStartAt),
             endAt: new Date(parsedData.savedAt),
           });
-        } else if (parsedData.openStartAt) {
-          // older draft: treat openStartAt as raw too
-          restoredRaw.push({
+        } else if (
+          // backward compat: if rawOpenStartAt missing but openStartAt exists
+          !parsedData.rawOpenStartAt &&
+          parsedData.openStartAt &&
+          parsedData.isCapturing &&
+          !parsedData.isPaused &&
+          parsedData.savedAt
+        ) {
+          restoredRawSegments.push({
             startAt: new Date(parsedData.openStartAt),
             endAt: new Date(parsedData.savedAt),
           });
         }
+
+        segmentsRef.current = restoredSegments;
+        if (rawSegmentsRef) rawSegmentsRef.current = restoredRawSegments;
+
+        pendingAutoSubmitRef.current = !!parsedData.pendingAutoSubmit;
+
+        // ✅ snapshot stored (prevents later ref wipe => autosave 0)
+        restoredDraftRef.current = {
+          selectedTaskId: parsedData.selectedTaskId,
+          selectedTaskName: parsedData.selectedTaskName || "",
+          elapsedSeconds: Number(parsedData.elapsedSeconds || 0),
+          savedAt: parsedData.savedAt || null,
+          restoredActiveSegments: restoredSegments,
+          restoredRawSegments: restoredRawSegments,
+        };
+
+        // stop any running UI capture
+        setIsCapturing(false);
+        setIsPaused(false);
+
+        // ✅ logs like ScreenshotApp
+        console.log("✅ DRAFT RESTORED -------------------");
+        console.log("ACTIVE segments:", restoredSegments.length, restoredSegments);
+        console.log("RAW segments:", restoredRawSegments.length, restoredRawSegments);
+        console.log("savedAt:", parsedData.savedAt);
+        console.log("-----------------------------------");
+
+        const preview = buildSegmentBreakdown(restoredRawSegments, restoredSegments);
+        logSegmentBreakdown("DRAFT RESTORED (Segment-wise preview)", preview);
       }
-
-      segmentsRef.current = restoredActive;
-      rawSegmentsRefSafe.current = restoredRaw;
-
-      pendingAutoSubmitRef.current = !!parsedData.pendingAutoSubmit;
-
-      restoredDraftRef.current = {
-        selectedTaskId: parsedData.selectedTaskId,
-        selectedTaskName: parsedData.selectedTaskName || "",
-        elapsedSeconds: Number(parsedData.elapsedSeconds || 0),
-        savedAt: parsedData.savedAt || null,
-      };
-
-      setIsCapturing(false);
-      setIsPaused(false);
     } catch (e) {
       console.error("Failed to parse cachedData:", e);
     }
+    
   }, []);
 
   // Auto-save while capturing
@@ -290,6 +407,7 @@ export default function useDraftManager({
         autoSaveRef.current = null;
       }
     };
+    
   }, [isCapturing, selectedTaskId, selectedTaskName]);
 
   // beforeunload + visibilitychange
@@ -297,7 +415,8 @@ export default function useDraftManager({
     const onBeforeUnload = () => finalizeAndPersistOnClose("beforeunload");
 
     const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") finalizeAndPersistOnClose("hidden");
+      if (document.visibilityState === "hidden")
+        finalizeAndPersistOnClose("hidden");
     };
 
     window.addEventListener("beforeunload", onBeforeUnload);
@@ -307,6 +426,7 @@ export default function useDraftManager({
       window.removeEventListener("beforeunload", onBeforeUnload);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
+    
   }, [selectedTaskId]);
 
   // Offline event
@@ -314,6 +434,7 @@ export default function useDraftManager({
     const onOffline = () => handleNetworkLoss("offline_event");
     window.addEventListener("offline", onOffline);
     return () => window.removeEventListener("offline", onOffline);
+    
   }, [selectedTaskId]);
 
   // Offline polling
@@ -321,7 +442,8 @@ export default function useDraftManager({
     if (networkPollRef.current) clearInterval(networkPollRef.current);
 
     networkPollRef.current = setInterval(() => {
-      const nowOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
+      const nowOnline =
+        typeof navigator !== "undefined" ? navigator.onLine : true;
       if (lastOnlineRef.current && !nowOnline) {
         lastOnlineRef.current = nowOnline;
         handleNetworkLoss("poll_offline");
@@ -334,6 +456,7 @@ export default function useDraftManager({
       clearInterval(networkPollRef.current);
       networkPollRef.current = null;
     };
+    
   }, [selectedTaskId]);
 
   // Login auto-save once tasks load
@@ -354,6 +477,10 @@ export default function useDraftManager({
       );
 
       if (!serverTask) {
+        console.error(
+          "No task found for the draft selectedTaskId:",
+          draft.selectedTaskId
+        );
         loginAutoSaveInFlightRef.current = false;
         autoSavedDraftOnceRef.current = false;
         return;
@@ -362,7 +489,10 @@ export default function useDraftManager({
       const draftSeconds = Number(draft.elapsedSeconds || 0);
       const serverSeconds = toSeconds(serverTask?.last_timing);
 
-      const totalSeconds = Math.max(0, Math.floor(Math.max(draftSeconds, serverSeconds)));
+      const totalSeconds = Math.max(
+        0,
+        Math.floor(Math.max(draftSeconds, serverSeconds))
+      );
 
       if (draft.selectedTaskName && !selectedTaskName) {
         setSelectedTaskName(draft.selectedTaskName);
@@ -376,7 +506,7 @@ export default function useDraftManager({
         const developerId = Number(localStorage.getItem("user_id") || 0) || null;
         const tenantId = Number(localStorage.getItem("tenant_id") || 0) || null;
 
-        // 1) update task timing (only if needed)
+        // update task timing (only if needed)
         if (serverSeconds < totalSeconds) {
           const updateRes = await fetch(
             `${API_BASE}/api/tasks/task-update/${draft.selectedTaskId}`,
@@ -397,52 +527,56 @@ export default function useDraftManager({
           }
         }
 
-        // 2) time-tracking post:
-        // RAW task_start/task_end + active_seconds (deducted)
-        const rawSegs = rawSegmentsRefSafe.current || [];
-        const actSegs = segmentsRef.current || [];
+        // ✅ ALWAYS use snapshot (avoids refs cleared => 0)
+        const activeSegs =
+          draft.restoredActiveSegments && draft.restoredActiveSegments.length > 0
+            ? draft.restoredActiveSegments
+            : segmentsRef.current || [];
 
-        const segmentsToSend = [];
-        for (let i = 0; i < rawSegs.length; i++) {
-          const raw = rawSegs[i];
-          const act = actSegs[i];
+        const rawSegs =
+          draft.restoredRawSegments && draft.restoredRawSegments.length > 0
+            ? draft.restoredRawSegments
+            : rawSegmentsRef?.current?.length
+            ? rawSegmentsRef.current
+            : activeSegs;
 
-          const rawSt = raw?.startAt ? new Date(raw.startAt).getTime() : 0;
-          const rawEn = raw?.endAt ? new Date(raw.endAt).getTime() : 0;
-          if (!rawSt || !rawEn || rawEn <= rawSt) continue;
+        const breakdown = buildSegmentBreakdown(rawSegs, activeSegs);
+        logSegmentBreakdown("AUTO-SAVE FINAL (Recovered draft - Segment-wise)", breakdown);
 
-          const window_seconds = Math.floor((rawEn - rawSt) / 1000);
-
-          let active_seconds = window_seconds;
-          const actSt = act?.startAt ? new Date(act.startAt).getTime() : 0;
-          const actEn = act?.endAt ? new Date(act.endAt).getTime() : 0;
-          if (actSt && actEn && actEn > actSt) {
-            active_seconds = Math.floor((actEn - actSt) / 1000);
-          }
-          active_seconds = Math.max(0, Math.min(active_seconds, window_seconds));
-          const idle_seconds = Math.max(0, window_seconds - active_seconds);
-
-          segmentsToSend.push({
+        const segmentsToSend = (breakdown.perSegment || [])
+          .filter((x) => x.task_start && x.task_end)
+          .map((x) => ({
             task_id: Number(draft.selectedTaskId),
             project_id: Number(serverTask.project_id),
             developer_id: developerId,
-            work_date: formatDateYMD(new Date(rawSt)),
-            task_start: toIsoNoMs(new Date(rawSt)),
-            task_end: toIsoNoMs(new Date(rawEn)),
+            work_date: formatDateYMD(x.raw_task_start || x.task_start),
+
+            // ✅ ACTIVE start/end so server duration = active time
+            task_start: toIsoNoMs(x.task_start),
+            task_end: toIsoNoMs(x.task_end),
+
+            // ✅ RAW actual window for your analysis/storage
+            raw_task_start: toIsoNoMs(x.raw_task_start || x.task_start),
+            raw_task_end: toIsoNoMs(x.raw_task_end || x.task_end),
+
+            raw_seconds: x.raw_seconds,
+            active_seconds: x.active_seconds,
+            idle_deducted_seconds: x.idle_deducted_seconds,
+            segment_index: x.segment_index,
+
             tenant_id: tenantId,
             user_tz: getUserTz(),
             user_offset_minutes: getUserOffsetMinutes(),
-
-            window_seconds,
-            active_seconds,
-            idle_seconds,
-            tracked_seconds: active_seconds,
-          });
-        }
+          }));
 
         if (segmentsToSend.length > 0) {
           const bodyToSend =
             segmentsToSend.length === 1 ? segmentsToSend[0] : segmentsToSend;
+
+          logClockAt("AUTO-SAVE /time-tracking POST", new Date(), {
+            selectedTaskId: draft.selectedTaskId,
+            segments: segmentsToSend.length,
+          });
 
           const timeTrackingRes = await fetch(`${API_BASE}/api/time-tracking`, {
             method: "POST",
@@ -457,7 +591,7 @@ export default function useDraftManager({
           }
         }
 
-        // 3) flagger back to 0
+        // flagger back to 0
         try {
           await updateTaskFlagger(draft.selectedTaskId, 0);
         } catch (e) {
@@ -468,7 +602,8 @@ export default function useDraftManager({
           shownAutoSavedToastRef.current = true;
           showToast(
             t("toast.recoveredDraft", {
-              defaultValue: "✅ Previous session time was saved automatically. Reloading…",
+              defaultValue:
+                "✅ Previous session time was saved automatically. Reloading…",
             })
           );
         }
@@ -481,18 +616,21 @@ export default function useDraftManager({
         }
 
         startAtRef.current = null;
-        rawStartAtRefSafe.current = null;
+        if (rawStartAtRef) rawStartAtRef.current = null;
 
         segmentsRef.current = [];
-        rawSegmentsRefSafe.current = [];
+        if (rawSegmentsRef) rawSegmentsRef.current = [];
 
         pendingAutoSubmitRef.current = false;
 
         setSelectedTaskId("");
         setSelectedTaskName("");
         setElapsedSeconds(0);
+        setSelectedProjectId("");
 
         clearDraft();
+
+        // your previous behavior (kept)
         setTimeout(() => window.location.reload(), 600000);
       } catch (e) {
         console.error("Login auto-save error:", e);
@@ -502,6 +640,7 @@ export default function useDraftManager({
     };
 
     runLoginAutoSave();
+
   }, [taskData, selectedTaskName, API_BASE, t]);
 
   return {

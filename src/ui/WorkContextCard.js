@@ -38,7 +38,9 @@ export default function WorkContextCard({
               value={selectedProjectId}
               onChange={handleProjectFilterChange}
               className="scrollable-select"
-              disabled={isCapturing || isPaused || blockSelections || approvalLoading}
+              disabled={
+                isCapturing || isPaused || blockSelections || approvalLoading
+              }
             >
               <option value="">
                 {t("dashboard.workContext.filterProject.all", {
@@ -63,16 +65,28 @@ export default function WorkContextCard({
               value={selectedTaskId}
               onChange={handleTaskChange}
               className="scrollable-select"
-              disabled={isCapturing || isPaused || blockSelections || approvalLoading}
+              disabled={
+                isCapturing || isPaused || blockSelections || approvalLoading
+              }
             >
+              {/* IMPORTANT:
+                  This blank option is what triggers your parent handleTaskChange logic.
+                  When you select this while a task was selected, parent calls updateTaskFlagger(prev, 0). */}
               <option value="">
                 {filteredTasks.length
-                  ? t("dashboard.workContext.task.select", { defaultValue: "Select Task" })
-                  : t("dashboard.workContext.task.none", { defaultValue: "No tasks available" })}
+                  ? t("dashboard.workContext.task.select", {
+                      defaultValue: "Select Task",
+                    })
+                  : t("dashboard.workContext.task.none", {
+                      defaultValue: "No tasks available",
+                    })}
               </option>
 
               {filteredTasks.map((task) => (
-                <option key={task?.id ?? task?.task_id ?? task?._id} value={task?.id ?? task?.task_id ?? task?._id}>
+                <option
+                  key={task?.id ?? task?.task_id ?? task?._id}
+                  value={task?.id ?? task?.task_id ?? task?._id}
+                >
                   {task.task_name}
                 </option>
               ))}

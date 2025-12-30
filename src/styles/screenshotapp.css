@@ -752,6 +752,25 @@ body {
   border-radius: 8px;                 
 }
 
+/* ConfirmDialog must be above everything inside the app */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647; /* highest practical */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirm-card {
+  position: relative;
+  z-index: 2147483647;
+}
+
+/* Optional: if any parent uses transform, this helps keep layering stable */
+.app-shell, .app-main {
+  position: relative;
+}
 
 
 
