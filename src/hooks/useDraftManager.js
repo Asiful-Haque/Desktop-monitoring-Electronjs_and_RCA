@@ -476,15 +476,29 @@ export default function useDraftManager({
         (tt) => String(getTaskId(tt)) === String(draft.selectedTaskId)
       );
 
-      if (!serverTask) {
-        console.error(
-          "No task found for the draft selectedTaskId:",
-          draft.selectedTaskId
-        );
-        loginAutoSaveInFlightRef.current = false;
-        autoSavedDraftOnceRef.current = false;
-        return;
-      }
+if (!serverTask) {
+  console.warn(
+    "Draft task is not available for this user anymore. Clearing draft:",
+    draft.selectedTaskId
+  );
+
+  // stop the loop permanently
+  autoSavedDraftOnceRef.current = true;
+  loginAutoSaveInFlightRef.current = false;
+  pendingAutoSubmitRef.current = false;
+
+  // clear local + in-memory draft
+  clearDraft();
+
+  // reset UI selection
+  setSelectedTaskId("");
+  setSelectedTaskName("");
+  setElapsedSeconds(0);
+  setSelectedProjectId("");
+
+  return;
+}
+
 
       const draftSeconds = Number(draft.elapsedSeconds || 0);
       const serverSeconds = toSeconds(serverTask?.last_timing);

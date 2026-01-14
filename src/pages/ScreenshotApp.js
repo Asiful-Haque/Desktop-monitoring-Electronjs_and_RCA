@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import "../styles/screenshotapp.css";
 
@@ -27,6 +33,12 @@ const ScreenshotApp = () => {
   const videoRef = useRef([]);
   const previewRef = useRef(null);
   const streamsRef = useRef([]);
+const [activityLog, setActivityLog] = useState([]);
+const [browserHistory, setBrowserHistory] = useState([]);
+const [siteTimeLogs, setSiteTimeLogs] = useState([]);
+  // ✅ NEW: profiles + selected profile
+  const [chromeProfiles, setChromeProfiles] = useState([]);
+  const [selectedChromeProfile, setSelectedChromeProfile] = useState("Default");
 
   const streamRef = useRef(null); // preserved (your original quit/logout logic used it)
 
@@ -37,6 +49,87 @@ const ScreenshotApp = () => {
   useEffect(() => {
     isCapturingRef.current = isCapturing;
   }, [isCapturing]);
+
+  // Log and fetch browser activity + history (with profile selection)
+  useEffect(() => {
+    let alive = true;
+
+    const init = async () => {
+      try {
+        // ✅ 1) load profiles
+        const profiles = await window.electronAPI.listChromeProfiles();
+        if (!alive) return;
+
+        const list = Array.isArray(profiles) ? profiles : [];
+        setChromeProfiles(list);
+
+        const initialProfile = list.includes("Default")
+          ? "Default"
+          : list.length > 0
+          ? list[0]
+          : "Default";
+
+        setSelectedChromeProfile(initialProfile);
+
+        // ✅ 2) load history for initial profile
+        const historyData = await window.electronAPI.fetchBrowserHistory({
+          profileDir: initialProfile,
+          dbLimit: 2000,
+          resultLimit: 20,
+          uniqueByTitle: true,
+          excludeJunk: true,
+        });
+
+        if (!alive) return;
+        setBrowserHistory(Array.isArray(historyData) ? historyData : []);
+      } catch (e) {
+        if (!alive) return;
+        setChromeProfiles([]);
+        setSelectedChromeProfile("Default");
+        setBrowserHistory([]);
+      }
+    };
+
+    init();
+
+    // 3) Track activity (unchanged logic)
+    window.electronAPI.trackBrowserActivity().then((log) => {
+      if (!alive) return;
+      if (log && Array.isArray(log)) {
+        const flatLog = log.flat();
+        const uniqueNames = [...new Set(flatLog.map((item) => item.browser))];
+        const uniqueRecords = uniqueNames
+          .map((name) => flatLog.find((item) => item.browser === name))
+          .filter(Boolean);
+
+        setActivityLog(uniqueRecords);
+      }
+    });
+    // ✅ NEW: fetch real time spent per website
+window.electronAPI.getActiveTimeLogs().then((logs) => {
+  if (!alive) return;
+  setSiteTimeLogs(Array.isArray(logs) ? logs : []);
+});
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const handleChromeProfileChange = async (e) => {
+    const profile = e.target.value;
+    setSelectedChromeProfile(profile);
+
+    const historyData = await window.electronAPI.fetchBrowserHistory({
+      profileDir: profile,
+      dbLimit: 2000,
+      resultLimit: 20,
+      uniqueByTitle: true,
+      excludeJunk: true,
+    });
+
+    setBrowserHistory(Array.isArray(historyData) ? historyData : []);
+  };
 
   const { elapsedSeconds, setElapsedSeconds, elapsedSecondsRef } =
     useElapsedSeconds();
@@ -74,10 +167,7 @@ const ScreenshotApp = () => {
       idle.idleWarningOpen;
 
     // only run inside Electron
-    if (
-      !window?.electronAPI?.urgentShow ||
-      !window?.electronAPI?.urgentClear
-    )
+    if (!window?.electronAPI?.urgentShow || !window?.electronAPI?.urgentClear)
       return;
 
     if (isUrgentOpen) {
@@ -85,7 +175,12 @@ const ScreenshotApp = () => {
     } else {
       window.electronAPI.urgentClear();
     }
-  }, [showFinishConfirm, showQuitConfirm, showLogoutConfirm, idle.idleWarningOpen]);
+  }, [
+    showFinishConfirm,
+    showQuitConfirm,
+    showLogoutConfirm,
+    idle.idleWarningOpen,
+  ]);
 
   // -----------------------------
   // ACTIVE segments (deductions applied)
@@ -159,7 +254,9 @@ const ScreenshotApp = () => {
   const logClockAt = (label, atDate, extra = {}) => {
     const d = atDate instanceof Date ? atDate : new Date();
     console.log(
-      `⏱️ ${label} @ ${formatClock(d)} | iso=${d.toISOString()} | tz=${getUserTz()} | offsetMin=${getUserOffsetMinutes()}`,
+      `⏱️ ${label} @ ${formatClock(
+        d
+      )} | iso=${d.toISOString()} | tz=${getUserTz()} | offsetMin=${getUserOffsetMinutes()}`,
       extra
     );
   };
@@ -533,6 +630,7 @@ const ScreenshotApp = () => {
 
     // ✅ Always clear previous selection flagger
     if (prevId) updateTaskFlagger(prevId, 0);
+    draft.clearDraft();
 
     // ✅ If user clicked "Select Task" (blank) -> stop here (flagger already cleared)
     if (!newId) {
@@ -686,6 +784,198 @@ const ScreenshotApp = () => {
   };
 
   // Finish (Submit)
+  // const handleFinish = async (opts = {}) => {
+  //   const silentAutoSubmit = !!opts.silentAutoSubmit;
+  //   const submitClickedAt = new Date();
+
+  //   // close running segments using submit click time
+  //   if (startAtRef.current) {
+  //     segmentsRef.current.push({
+  //       startAt: new Date(startAtRef.current),
+  //       endAt: submitClickedAt,
+  //     });
+  //     startAtRef.current = null;
+  //   }
+
+  //   if (rawStartAtRef.current) {
+  //     rawSegmentsRef.current.push({
+  //       startAt: new Date(rawStartAtRef.current),
+  //       endAt: submitClickedAt,
+  //     });
+  //     rawStartAtRef.current = null;
+  //   }
+
+  //   setSessionWindowEnd(submitClickedAt);
+
+  //   logClockAt("SUBMIT clicked", submitClickedAt, {
+  //     silentAutoSubmit,
+  //     selectedTaskId,
+  //     selectedProjectId,
+  //     activeSegmentsCount: segmentsRef.current?.length || 0,
+  //     rawSegmentsCount: rawSegmentsRef.current?.length || 0,
+  //   });
+
+  //   if (segmentsRef.current.length === 0) {
+  //     if (!silentAutoSubmit) {
+  //       showToast(
+  //         t("toast.noTimeCaptured", {
+  //           defaultValue: "No time captured. Please Start first.",
+  //         })
+  //       );
+  //     }
+  //     return;
+  //   }
+
+  //   setIsCapturing(false);
+  //   setIsPaused(silentAutoSubmit ? false : true);
+  //   stopTimer();
+  //   idle.stopSampling();
+  //   shots.stopScreenshotCycle();
+
+  //   const theTask = taskData.find(
+  //     (tt) => String(getTaskId(tt)) === String(selectedTaskId)
+  //   );
+
+  //   if (!theTask) {
+  //     draft.persistDraft(true, { reason: "task_not_found" });
+  //     if (!silentAutoSubmit) {
+  //       showToast(
+  //         t("toast.taskNotFound", { defaultValue: "Selected task not found." })
+  //       );
+  //     }
+  //     return;
+  //   }
+
+  //   const developerId = Number(localStorage.getItem("user_id") || 0);
+  //   const tenant_id_local = Number(localStorage.getItem("tenant_id") || 0);
+
+  //   const user_tz = getUserTz();
+  //   const user_offset_minutes = getUserOffsetMinutes();
+
+  //   // ✅ breakdown + FINAL segment-wise console table
+  //   const breakdown = buildSegmentBreakdown(
+  //     rawSegmentsRef.current || [],
+  //     segmentsRef.current || []
+  //   );
+  //   logSegmentBreakdown("FINAL (Segment-wise)", breakdown);
+
+  //   // ✅ build micro-segment payload (same shape used by autosave)
+  //   const segmentsToSend = (breakdown.perSegment || [])
+  //     .filter((x) => x.task_start && x.task_end)
+  //     .map((x) => ({
+  //       task_id: Number(getTaskId(theTask)),
+  //       project_id: Number(theTask.project_id),
+  //       developer_id: developerId || null,
+  //       work_date: formatDateYMD(x.raw_task_start || x.task_start),
+
+  //       // ✅ ACTIVE start/end so backend duration = active
+  //       task_start: toIsoNoMs(x.task_start),
+  //       task_end: toIsoNoMs(x.task_end),
+
+  //       // ✅ RAW click window for actual start/end
+  //       raw_task_start: toIsoNoMs(x.raw_task_start || x.task_start),
+  //       raw_task_end: toIsoNoMs(x.raw_task_end || x.task_end),
+
+  //       raw_seconds: x.raw_seconds,
+  //       active_seconds: x.active_seconds,
+  //       idle_deducted_seconds: x.idle_deducted_seconds,
+  //       segment_index: x.segment_index,
+
+  //       tenant_id: tenant_id_local || null,
+  //       user_tz,
+  //       user_offset_minutes,
+  //     }));
+
+  //   if (segmentsToSend.length === 0) return;
+
+  //   const bodyToSend =
+  //     segmentsToSend.length === 1 ? segmentsToSend[0] : segmentsToSend;
+
+  //   try {
+  //     const ttRes = await fetch(`${API_BASE}/api/time-tracking`, {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       credentials: "include",
+  //       body: JSON.stringify(bodyToSend),
+  //     });
+
+  //     const ttData = await ttRes.json().catch(() => ({}));
+  //     if (!ttRes.ok) {
+  //       draft.persistDraft(true, { reason: "submit_failed" });
+  //       if (!silentAutoSubmit) {
+  //         showToast(
+  //           ttData?.error ||
+  //             t("toast.submitFailed", {
+  //               defaultValue: "Failed to submit time tracking.",
+  //             })
+  //         );
+  //         setShowFinishConfirm(true);
+  //       }
+  //       return;
+  //     }
+
+  //     // ✅ update last_timing using ACTIVE session seconds
+  //     const baseSeconds = toSeconds(theTask?.last_timing);
+  //     const totalSeconds = Math.max(
+  //       0,
+  //       Math.floor(
+  //         Math.max(
+  //           elapsedSecondsRef.current,
+  //           baseSeconds + breakdown.active_session_seconds
+  //         )
+  //       )
+  //     );
+
+  //     await fetch(`${API_BASE}/api/tasks/task-update/${selectedTaskId}`, {
+  //       method: "PUT",
+  //       headers: { "Content-Type": "application/json" },
+  //       credentials: "include",
+  //       body: JSON.stringify({
+  //         taskId: selectedTaskId,
+  //         last_timing: totalSeconds,
+  //       }),
+  //     }).catch(() => {});
+
+  //     await updateTaskFlagger(selectedTaskId, 0);
+
+  //     if (!silentAutoSubmit) {
+  //       showToast(
+  //         t("toast.timeSaved", { defaultValue: "Time tracking saved!" })
+  //       );
+  //     }
+
+  //     // clear session buffers
+  //     segmentsRef.current = [];
+  //     rawSegmentsRef.current = [];
+  //     draft.clearDraft();
+
+  //     setIsCapturing(false);
+  //     setIsPaused(false);
+
+  //     if (!silentAutoSubmit)
+  //       setTimeout(() => window.location.reload(), 300000);
+  //   } catch (err) {
+  //     draft.persistDraft(true, { reason: "submit_network_error" });
+  //     if (!silentAutoSubmit) {
+  //       showToast(
+  //         t("toast.submitNetworkError", {
+  //           defaultValue: "Network error submitting time tracking.",
+  //         })
+  //       );
+  //     }
+  //   } finally {
+  //     setSelectedTaskId("");
+  //     setSelectedTaskName("");
+  //     setElapsedSeconds(0);
+
+  //     segmentsRef.current = [];
+  //     rawSegmentsRef.current = [];
+
+  //     setSelectedProjectId("");
+  //     setSessionWindowStart(null);
+  //     setSessionWindowEnd(null);
+  //   }
+  // };
   const handleFinish = async (opts = {}) => {
     const silentAutoSubmit = !!opts.silentAutoSubmit;
     const submitClickedAt = new Date();
@@ -794,6 +1084,7 @@ const ScreenshotApp = () => {
       segmentsToSend.length === 1 ? segmentsToSend[0] : segmentsToSend;
 
     try {
+      // ✅ Submit the time tracking data to /api/time-tracking
       const ttRes = await fetch(`${API_BASE}/api/time-tracking`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -816,7 +1107,7 @@ const ScreenshotApp = () => {
         return;
       }
 
-      // ✅ update last_timing using ACTIVE session seconds
+      // ✅ Update the task's last_timing using ACTIVE session seconds
       const baseSeconds = toSeconds(theTask?.last_timing);
       const totalSeconds = Math.max(
         0,
@@ -845,23 +1136,76 @@ const ScreenshotApp = () => {
           t("toast.timeSaved", { defaultValue: "Time tracking saved!" })
         );
       }
+      const currentDate = formatDateYMD(new Date());
+      console.log("Current Date for Attendance Check:", currentDate);
 
-      // clear session buffers
-      segmentsRef.current = [];
-      rawSegmentsRef.current = [];
-      draft.clearDraft();
+      const existingAttendance = await fetch(
+        `${API_BASE}/api/attendance?date=${currentDate}`,
+        {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+        }
+      );
 
-      setIsCapturing(false);
-      setIsPaused(false);
+      const existingData = await existingAttendance.json();
+      console.log(
+        "Existing Attendance Data:-------------------------------------",
+        existingData
+      );
 
-      if (!silentAutoSubmit)
-        setTimeout(() => window.location.reload(), 300000);
+      if (existingData?.rows?.length !== 0) {
+        const attendanceRes = await fetch(`${API_BASE}/api/attendance`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            tenant_id: tenant_id_local,
+            user_id: developerId,
+            attendance_day: `${formatDateYMD(currentDate)}T00:00:00Z`, // UTC midnight time
+            status: "present", // Default status
+            check_in_time: bodyToSend.task_start, // Using task_start as check_in_time
+            check_out_time: bodyToSend.task_end, // Using task_end as check_out_time
+            notes: "Submitted after Attendance", // Custom notes
+            last_updated_by: developerId,
+            user_role: localStorage.getItem("user_role") || "Developer",
+          }),
+        });
+        const attendanceData = await attendanceRes.json().catch(() => ({}));
+        if (!attendanceRes.ok) {
+          draft.persistDraft(true, { reason: "attendance_submit_failed" });
+          if (!silentAutoSubmit) {
+            showToast(
+              attendanceData?.error ||
+                t("toast.submitAttendanceFailed", {
+                  defaultValue: "Failed to submit attendance.",
+                })
+            );
+            setShowFinishConfirm(true);
+          }
+          return;
+        }
+
+        // Clear session buffers
+        segmentsRef.current = [];
+        rawSegmentsRef.current = [];
+        draft.clearDraft();
+
+        setIsCapturing(false);
+        setIsPaused(false);
+
+        if (!silentAutoSubmit)
+          setTimeout(() => window.location.reload(), 300000);
+      } else {
+        console.log("Attendance already recorded for this day.");
+      }
     } catch (err) {
       draft.persistDraft(true, { reason: "submit_network_error" });
       if (!silentAutoSubmit) {
         showToast(
           t("toast.submitNetworkError", {
-            defaultValue: "Network error submitting time tracking.",
+            defaultValue:
+              "Network error submitting time tracking and attendance.",
           })
         );
       }
@@ -950,6 +1294,9 @@ const ScreenshotApp = () => {
     ],
     []
   );
+
+  console.log("Browser History State:", browserHistory);
+  console.log("Activity Log State:", activityLog);
 
   return (
     <div className="app-shell">
@@ -1089,7 +1436,9 @@ const ScreenshotApp = () => {
                     defaultValue: "Today's Time",
                   })}
                 </span>
-                <span className="summary-value">{formatTime(elapsedSeconds)}</span>
+                <span className="summary-value">
+                  {formatTime(elapsedSeconds)}
+                </span>
                 <span className="summary-sub">
                   {t("dashboard.summary.today.sub", {
                     defaultValue: "Session duration",
@@ -1100,7 +1449,8 @@ const ScreenshotApp = () => {
               <div className="summary-card">
                 <span className="summary-label">Session (Actual Window)</span>
                 <span className="summary-value">
-                  {sessionWindowStart ? formatClock(sessionWindowStart) : "--"} →{" "}
+                  {sessionWindowStart ? formatClock(sessionWindowStart) : "--"}{" "}
+                  →{" "}
                   {sessionWindowEnd
                     ? formatClock(sessionWindowEnd)
                     : isCapturing
@@ -1161,6 +1511,78 @@ const ScreenshotApp = () => {
           curruser={currUser}
           allusers={allUsers}
         />
+
+        <div>
+          <h1>Browser Activity</h1>
+          <ul>
+            {activityLog.map((log, index) => (
+              <li key={index}>
+                {log.browser} - {log.pid} - {log.time}
+              </li>
+            ))}
+          </ul>
+
+          <h2>Browser History</h2>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              marginBottom: 10,
+            }}
+          >
+            <label style={{ fontWeight: 600 }}>Chrome Profile:</label>
+            <select
+              value={selectedChromeProfile}
+              onChange={handleChromeProfileChange}
+            >
+              {chromeProfiles.length === 0 ? (
+                <option value="Default">Default</option>
+              ) : (
+                chromeProfiles.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+<h2>Today’s Browser Usage</h2>
+
+{browserHistory.length === 0 ? (
+  <p style={{ opacity: 0.7 }}>No usage today</p>
+) : (
+  <ul>
+    {browserHistory.map((item, i) => (
+      <li key={i} style={{ marginBottom: 8 }}>
+        <strong>{item.hostname}</strong>
+        <span style={{ marginLeft: 8, opacity: 0.7 }}>
+          — {item.visitTime}
+        </span>
+      </li>
+    ))}
+  </ul>
+)}
+
+<h2>Time Spent per Website</h2>
+
+{siteTimeLogs.length === 0 ? (
+  <p style={{ opacity: 0.7 }}>No activity yet</p>
+) : (
+  <ul>
+    {siteTimeLogs.map((item, i) => (
+      <li key={i} style={{ marginBottom: 8 }}>
+        <strong>{item.hostname}</strong>
+        <span style={{ marginLeft: 8, opacity: 0.7 }}>
+          — {item.seconds}s
+        </span>
+      </li>
+    ))}
+  </ul>
+)}
+        </div>
       </main>
     </div>
   );
