@@ -35,7 +35,7 @@ const ScreenshotApp = () => {
   const streamsRef = useRef([]);
 const [activityLog, setActivityLog] = useState([]);
 const [browserHistory, setBrowserHistory] = useState([]);
-const [siteTimeLogs, setSiteTimeLogs] = useState([]);
+// const [siteTimeLogs, setSiteTimeLogs] = useState([]);
   // ✅ NEW: profiles + selected profile
   const [chromeProfiles, setChromeProfiles] = useState([]);
   const [selectedChromeProfile, setSelectedChromeProfile] = useState("Default");
@@ -106,10 +106,11 @@ const [siteTimeLogs, setSiteTimeLogs] = useState([]);
       }
     });
     // ✅ NEW: fetch real time spent per website
-window.electronAPI.getActiveTimeLogs().then((logs) => {
-  if (!alive) return;
-  setSiteTimeLogs(Array.isArray(logs) ? logs : []);
-});
+// window.electronAPI.getActiveTimeLogs().then((logs) => {
+//   console.log("✅ Received active time logs from Electron:", logs);
+//   if (!alive) return;
+//   setSiteTimeLogs(Array.isArray(logs) ? logs : []);
+// });
 
     return () => {
       alive = false;
@@ -692,6 +693,10 @@ window.electronAPI.getActiveTimeLogs().then((logs) => {
       return;
     }
 
+    if (window.electronAPI && window.electronAPI.startTracking) {
+        window.electronAPI.startTracking();
+    }
+
     // set RAW + ACTIVE start at click-time
     startAtRef.current = clickedAt; // ACTIVE (adjustable)
     rawStartAtRef.current = clickedAt; // RAW (never adjusted)
@@ -998,6 +1003,10 @@ window.electronAPI.getActiveTimeLogs().then((logs) => {
     }
 
     setSessionWindowEnd(submitClickedAt);
+
+    if (window.electronAPI && window.electronAPI.stopTracking) {
+        await window.electronAPI.stopTracking();
+    }
 
     logClockAt("SUBMIT clicked", submitClickedAt, {
       silentAutoSubmit,
@@ -1566,22 +1575,7 @@ window.electronAPI.getActiveTimeLogs().then((logs) => {
   </ul>
 )}
 
-<h2>Time Spent per Website</h2>
 
-{siteTimeLogs.length === 0 ? (
-  <p style={{ opacity: 0.7 }}>No activity yet</p>
-) : (
-  <ul>
-    {siteTimeLogs.map((item, i) => (
-      <li key={i} style={{ marginBottom: 8 }}>
-        <strong>{item.hostname}</strong>
-        <span style={{ marginLeft: 8, opacity: 0.7 }}>
-          — {item.seconds}s
-        </span>
-      </li>
-    ))}
-  </ul>
-)}
         </div>
       </main>
     </div>

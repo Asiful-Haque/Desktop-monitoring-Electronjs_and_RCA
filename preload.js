@@ -10,10 +10,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getTokenCookie: () => ipcRenderer.invoke("get-token-cookie"),
   urgentShow: () => ipcRenderer.invoke("urgent:show"),
   urgentClear: () => ipcRenderer.invoke("urgent:clear"),
-  getActiveTimeLogs: () => ipcRenderer.invoke("get-active-time-logs"),
+  // getActiveTimeLogs: () => ipcRenderer.invoke("get-active-time-logs"),
   trackBrowserActivity: () => ipcRenderer.invoke("track-browser-activity"),
 
   // NEW: Chrome profile + history
   listChromeProfiles: () => ipcRenderer.invoke("chrome:list-profiles"),
   fetchBrowserHistory: (args) => ipcRenderer.invoke("fetch-browser-history", args),
+  //Tracker for the C# engine
+  startTracking: () => ipcRenderer.send('start-tracking'),
+  stopTracking: () => ipcRenderer.send('stop-tracking')
 });

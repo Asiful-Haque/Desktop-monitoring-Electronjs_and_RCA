@@ -7,6 +7,8 @@ const {
   powerMonitor,
 } = require("electron");
 
+const { spawn } = require("child_process");
+
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -14,7 +16,12 @@ const fetch = require("node-fetch");
 const FormData = require("form-data");
 const psList = require("ps-list");
 const sqlite3 = require("sqlite3").verbose();
-const activeWin = require("active-win");
+
+let urlEngine = null;
+let sessionCache = {};
+let currentSession = { domain: null, startTime: null };
+
+const exePath = path.join(__dirname, "src", "bin", "UrlGetter.exe"); //Its the engine path
 
 console.log("✅ Main process starting...");
 
@@ -64,38 +71,94 @@ function createWindow() {
 }
 
 /* =====================================================
-   ✅ REAL TIME-SPENT TRACKING (PER HOSTNAME)
+   ✅ REAL TIME-SPENT TRACKING (PER HOSTNAME) — FIXED
+   Uses PowerShell (no native bindings)
    ===================================================== */
 
 let siteTimeMap = {}; // { hostname: seconds }
 let lastTickTime = Date.now();
 
-setInterval(async () => {
-  try {
-    const win = await activeWin();
-    if (!win) return;
+const exec = require("child_process").exec;
 
-    const browserNames = ["chrome", "firefox", "msedge", "brave"];
-    const processName = win.owner.name.toLowerCase();
-    if (!browserNames.some((b) => processName.includes(b))) return;
+function getActiveWindowTitle() {
+  const cmd = `
+powershell -command "
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class Win32 {
+  [DllImport(\\"user32.dll\\")]
+  public static extern IntPtr GetForegroundWindow();
 
-    const now = Date.now();
-    const deltaSeconds = Math.floor((now - lastTickTime) / 1000);
-    lastTickTime = now;
+  [DllImport(\\"user32.dll\\", SetLastError=true)]
+  public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+}
+'@
+$hWnd = [Win32]::GetForegroundWindow()
+$sb = New-Object System.Text.StringBuilder 1024
+[Win32]::GetWindowText($hWnd, $sb, $sb.Capacity) | Out-Null
+$sb.ToString()
+"
+  `;
+  exec(cmd, { windowsHide: true }, (err, stdout, stderr) => {
+    if (err) {
+      console.error("❌ Error:", err);
+      console.error("❌ stderr:", stderr);
+      return;
+    }
 
-    if (deltaSeconds <= 0) return;
+    const title = stdout.trim();
+    console.log("Active Window Title:", title);
+  });
+}
 
-    let hostname = "unknown";
-    try {
-      if (win.url) hostname = new URL(win.url).hostname;
-    } catch {}
+// Test the active window title capture
+getActiveWindowTitle();
 
-    if (!hostname) hostname = "unknown";
+// setInterval(() => {
+//   console.log("⏱ TRACKER TICK", new Date().toLocaleTimeString());
 
-    if (!siteTimeMap[hostname]) siteTimeMap[hostname] = 0;
-    siteTimeMap[hostname] += deltaSeconds;
-  } catch {}
-}, 5000);
+//   getActiveWindowTitle((title) => {
+//     if (!title) {
+//       console.log("❌ NO ACTIVE TITLE");
+//       return;
+//     }
+
+//     console.log("📝 WINDOW TITLE:", title); // Log the title every time it is retrieved
+
+//     const now = Date.now();
+//     const deltaSeconds = Math.floor((now - lastTickTime) / 1000);
+//     lastTickTime = now;
+
+//     if (deltaSeconds <= 0) return;
+
+//     let hostname = "";
+
+//     // Extract domain from window title
+//     const match = title.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
+//     if (match) {
+//       hostname = match[0];
+//       console.log("🌐 Extracted HOSTNAME:", hostname); // Log extracted hostname
+//     } else {
+//       console.log("⚠ No valid hostname found in title.");
+//       return;
+//     }
+
+//     if (!hostname) {
+//       console.log("⚠ No valid hostname detected.");
+//       return;
+//     }
+
+//     if (!siteTimeMap[hostname]) siteTimeMap[hostname] = 0;
+//     siteTimeMap[hostname] += deltaSeconds;
+
+//     console.log("✅ Time accumulated:", hostname, siteTimeMap[hostname], "seconds");
+
+//     // Log the entire siteTimeMap
+//     console.log("Current siteTimeMap:", siteTimeMap);
+//   });
+// }, 5000);
 
 /* =====================================================
    CHROME PROFILE HELPERS
@@ -145,17 +208,23 @@ function sanitizeProfileDir(profileDir) {
 }
 
 /* =====================================================
-   ✅ FIXED: TODAY-ONLY CHROME HISTORY
-   Returns: { hostname, visitTime }
+   ✅ TODAY-ONLY CHROME HISTORY
    ===================================================== */
 
-const fetchChromeHistory = ({ profileDir = "Default", dbLimit = 5000 } = {}) => {
+const fetchChromeHistory = ({
+  profileDir = "Default",
+  dbLimit = 5000,
+} = {}) => {
+  console.log(`Fetching Chrome history for profile: ${profileDir}`); // Log profile being used
+
   return new Promise((resolve) => {
     const baseDir = getChromeUserDataDir();
     if (!baseDir) return resolve([]);
 
     const safeProfile = sanitizeProfileDir(profileDir);
     const chromePath = path.join(baseDir, safeProfile, "History");
+    console.log("Chrome history database path:", chromePath); // Log the path
+
     if (!fs.existsSync(chromePath)) return resolve([]);
 
     const tempPath = path.join(
@@ -165,13 +234,17 @@ const fetchChromeHistory = ({ profileDir = "Default", dbLimit = 5000 } = {}) => 
 
     try {
       fs.copyFileSync(chromePath, tempPath);
+      // console.log("✅ Copied history file to temporary location:", tempPath);
 
       const db = new sqlite3.Database(
         tempPath,
         sqlite3.OPEN_READONLY,
         (openErr) => {
           if (openErr) {
-            try { fs.unlinkSync(tempPath); } catch {}
+            console.error("❌ Failed to open history database:", openErr);
+            try {
+              fs.unlinkSync(tempPath);
+            } catch {}
             return resolve([]);
           }
 
@@ -180,13 +253,19 @@ const fetchChromeHistory = ({ profileDir = "Default", dbLimit = 5000 } = {}) => 
             [Number(dbLimit) || 5000],
             (err, rows) => {
               db.close(() => {
-                try { fs.unlinkSync(tempPath); } catch {}
+                try {
+                  fs.unlinkSync(tempPath);
+                } catch {}
               });
 
-              if (err || !Array.isArray(rows)) return resolve([]);
+              if (err || !Array.isArray(rows)) {
+                console.error("❌ Error fetching history rows:", err);
+                return resolve([]);
+              }
+
+              // console.log("✅ Fetched Chrome history rows:", rows); // Log the fetched rows
 
               const CHROME_EPOCH_OFFSET_MS = 11644473600000;
-
               const now = new Date();
               const todayStart = new Date(
                 now.getFullYear(),
@@ -202,9 +281,7 @@ const fetchChromeHistory = ({ profileDir = "Default", dbLimit = 5000 } = {}) => 
                 if (!r.last_visit_time) continue;
 
                 const visitMs =
-                  Number(r.last_visit_time) / 1000 -
-                  CHROME_EPOCH_OFFSET_MS;
-
+                  Number(r.last_visit_time) / 1000 - CHROME_EPOCH_OFFSET_MS;
                 if (!Number.isFinite(visitMs)) continue;
                 if (visitMs < todayStart || visitMs >= todayEnd) continue;
 
@@ -218,7 +295,6 @@ const fetchChromeHistory = ({ profileDir = "Default", dbLimit = 5000 } = {}) => 
                 if (!hostname) continue;
 
                 const visitDate = new Date(visitMs);
-
                 const minuteKey =
                   visitDate.getHours() + ":" + visitDate.getMinutes();
                 const uniqueKey = `${hostname}|${minuteKey}`;
@@ -232,17 +308,65 @@ const fetchChromeHistory = ({ profileDir = "Default", dbLimit = 5000 } = {}) => 
                 });
               }
 
+              // console.log("✅ Filtered Chrome history data:", result); // Log filtered result
               resolve(result);
             }
           );
         }
       );
     } catch {
-      try { fs.unlinkSync(tempPath); } catch {}
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {}
       resolve([]);
     }
   });
 };
+
+function handleUrlDetection(newUrl) {
+  if (!newUrl || newUrl === "No URL found") return;
+  const now = new Date();
+
+  try {
+    const domain = new URL(
+      newUrl.startsWith("http") ? newUrl : `https://${newUrl}`
+    ).hostname;
+
+    if (currentSession.domain && currentSession.domain !== domain) {
+      const seconds = Math.floor((now - currentSession.startTime) / 1000);
+      sessionCache[currentSession.domain] =
+        (sessionCache[currentSession.domain] || 0) + seconds;
+    }
+
+    if (currentSession.domain !== domain) {
+      currentSession = { domain, startTime: now };
+    }
+  } catch (e) {}
+}
+
+// Function to finalize the time for the currently active tab
+function finalizeLastSession() {
+  const now = new Date();
+  if (currentSession.domain && currentSession.startTime) {
+    const seconds = Math.floor((now - currentSession.startTime) / 1000);
+
+    // Add the final seconds to our cache
+    sessionCache[currentSession.domain] =
+      (sessionCache[currentSession.domain] || 0) + seconds;
+
+    console.log(`Finalized ${currentSession.domain}: ${seconds}s`);
+
+    // Reset the session so it doesn't double-count
+    currentSession = { domain: null, startTime: null };
+  }
+}
+
+function syncDataToDatabase() {
+  // Here you perform your MySQL UPSERT or call your Next.js API
+  console.log("Final Task Data:", sessionCache);
+  sessionCache = {};
+  // ... insert MySQL logic here ...
+}
 
 /* =====================================================
    🔥 URGENT WINDOW CONTROL
@@ -280,12 +404,14 @@ function clearUrgentMode() {
    ===================================================== */
 
 // ✅ REAL time spent per site
-ipcMain.handle("get-active-time-logs", () => {
-  return Object.entries(siteTimeMap).map(([hostname, seconds]) => ({
-    hostname,
-    seconds,
-  }));
-});
+// ipcMain.handle("get-active-time-logs", () => {
+//   const activeTimeLogs = Object.entries(siteTimeMap).map(([hostname, seconds]) => ({
+//     hostname,
+//     seconds,
+//   }));
+//   // console.log("✅ Active time logs sent to renderer:", activeTimeLogs); // Log the time logs
+//   return activeTimeLogs;
+// });
 
 // optional reset
 ipcMain.handle("reset-site-time-logs", () => {
@@ -294,7 +420,7 @@ ipcMain.handle("reset-site-time-logs", () => {
   return true;
 });
 
-// process list
+// process list (unchanged)
 ipcMain.handle("track-browser-activity", async () => {
   try {
     const processes = await psList();
@@ -391,6 +517,51 @@ ipcMain.handle("get-token-cookie", async () => {
   } catch {
     return null;
   }
+});
+
+
+
+let engineProcess = null; 
+
+ipcMain.on("start-tracking", () => {
+  console.log("🚀 Task Started: Launching Engine...");
+
+  sessionCache = {};
+
+  // 2. Spawn the process ONCE (No setInterval needed)
+  // Ensure your C# code is a loop that prints the URL every 2s
+  engineProcess = spawn(exePath);
+
+  engineProcess.stdout.on("data", (data) => {
+    const url = data.toString().trim();
+    if (url && url !== "No URL found") {
+      handleUrlDetection(url);
+    }
+  });
+
+  engineProcess.on("error", (err) => {
+    console.error("❌ Engine failed to start:", err);
+  });
+
+  engineProcess.stderr.on("data", (data) => {
+    console.error(`Engine Error: ${data}`);
+  });
+});
+
+ipcMain.on("stop-tracking", () => {
+  console.log("🛑 Task Stopped: Finalizing Data...");
+
+  // 1. Kill the long-running engine process
+  if (engineProcess) {
+    engineProcess.kill();
+    engineProcess = null;
+  }
+
+  // 2. Finalize the very last active tab
+  finalizeLastSession();
+
+  // 3. Sync to DB (wrapped in setImmediate inside the function)
+  syncDataToDatabase();
 });
 
 /* =====================================================
