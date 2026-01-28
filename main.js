@@ -80,42 +80,6 @@ let lastTickTime = Date.now();
 
 const exec = require("child_process").exec;
 
-function getActiveWindowTitle() {
-  const cmd = `
-powershell -command "
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-public class Win32 {
-  [DllImport(\\"user32.dll\\")]
-  public static extern IntPtr GetForegroundWindow();
-
-  [DllImport(\\"user32.dll\\", SetLastError=true)]
-  public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
-}
-'@
-$hWnd = [Win32]::GetForegroundWindow()
-$sb = New-Object System.Text.StringBuilder 1024
-[Win32]::GetWindowText($hWnd, $sb, $sb.Capacity) | Out-Null
-$sb.ToString()
-"
-  `;
-  exec(cmd, { windowsHide: true }, (err, stdout, stderr) => {
-    if (err) {
-      console.error("❌ Error:", err);
-      console.error("❌ stderr:", stderr);
-      return;
-    }
-
-    const title = stdout.trim();
-    console.log("Active Window Title:", title);
-  });
-}
-
-// Test the active window title capture
-getActiveWindowTitle();
-
 // setInterval(() => {
 //   console.log("⏱ TRACKER TICK", new Date().toLocaleTimeString());
 
@@ -323,25 +287,38 @@ const fetchChromeHistory = ({
   });
 };
 
+let lastProcessedUrl = "";
+
 function handleUrlDetection(newUrl) {
-  if (!newUrl || newUrl === "No URL found") return;
-  const now = new Date();
+    // 1. FAST EXIT: Do nothing if the URL hasn't changed
+    if (!newUrl || newUrl === "No URL found" || newUrl === lastProcessedUrl) return;
+    
+    lastProcessedUrl = newUrl;
+    const now = new Date();
 
-  try {
-    const domain = new URL(
-      newUrl.startsWith("http") ? newUrl : `https://${newUrl}`
-    ).hostname;
+    // 2. Optimized Domain Extraction (Avoids heavy URL object if possible)
+    let domain = "";
+    try {
+        // Only create the URL object if necessary
+        const urlToParse = newUrl.startsWith("http") ? newUrl : `https://${newUrl}`;
+        domain = new URL(urlToParse).hostname;
+    } catch (e) {
+        return; // Ignore invalid URLs
+    }
 
+    // 3. Session Switching Logic
     if (currentSession.domain && currentSession.domain !== domain) {
-      const seconds = Math.floor((now - currentSession.startTime) / 1000);
-      sessionCache[currentSession.domain] =
-        (sessionCache[currentSession.domain] || 0) + seconds;
+        const seconds = Math.floor((now - currentSession.startTime) / 1000);
+        if (seconds > 0) {
+            sessionCache[currentSession.domain] = (sessionCache[currentSession.domain] || 0) + seconds;
+        }
     }
 
     if (currentSession.domain !== domain) {
-      currentSession = { domain, startTime: now };
+        currentSession = { domain, startTime: now };
+        // Only log when the domain actually CHANGES
+        console.log(`🌐 Switched to: ${domain}`);
     }
-  } catch (e) {}
 }
 
 // Function to finalize the time for the currently active tab
@@ -361,11 +338,45 @@ function finalizeLastSession() {
   }
 }
 
-function syncDataToDatabase() {
-  // Here you perform your MySQL UPSERT or call your Next.js API
-  console.log("Final Task Data:", sessionCache);
-  sessionCache = {};
-  // ... insert MySQL logic here ...
+async function syncDataToDatabase() {
+  try {
+    // 1. You MUST use the same base URL as your Next.js API
+    const targetUrl = "http://localhost:5500"; 
+
+    const cookies = await session.defaultSession.cookies.get({ url: targetUrl });
+    
+    // 2. Debugging: Log this once to see exactly what NextAuth named your cookie
+    // console.log("Available Cookies:", cookies.map(c => c.name));
+
+    // 3. Find the Auth token
+    // NextAuth uses 'next-auth.session-token' in dev and '__Secure-next-auth.session-token' in prod
+    const authCookie = cookies.find(c => c.name.includes("session-token") || c.name === "token");
+
+    if (!authCookie) {
+      console.warn("⚠️ No auth cookie found. Sync skipped (User likely logged out).");
+      return;
+    }
+
+    const cookieHeader = `${authCookie.name}=${authCookie.value}`;
+    console.log("Cookie heder is :",cookieHeader);
+
+    // 4. Send the request
+    const res = await fetch(`${targetUrl}/api/tracking/website`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Cookie": cookieHeader // This is what makes the Main Process act like the Browser
+      },
+      body: JSON.stringify(sessionCache),
+    });
+
+    if (res.ok) {
+      console.log("✅ Tracking synced successfully");
+      sessionCache = {}; 
+    }
+  } catch (err) {
+    console.error("❌ Cookie retrieval or Sync failed:", err);
+  }
 }
 
 /* =====================================================
@@ -562,6 +573,10 @@ ipcMain.on("stop-tracking", () => {
 
   // 3. Sync to DB (wrapped in setImmediate inside the function)
   syncDataToDatabase();
+
+  // --- REseting THESE FOR THE NEXT SESSION ---
+    lastProcessedUrl = ""; 
+    currentSession = { domain: null, startTime: null };
 });
 
 /* =====================================================

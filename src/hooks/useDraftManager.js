@@ -50,12 +50,12 @@ export default function useDraftManager({
 
   // network loss detection
   const lastOnlineRef = useRef(
-    typeof navigator !== "undefined" ? navigator.onLine : true
+    typeof navigator !== "undefined" ? navigator.onLine : true,
   );
   const networkPollRef = useRef(null);
-  const autoSaveRef = useRef(null);
-  const loginAutoSaveInFlightRef = useRef(false);
+  const offlineStreakRef = useRef(0);
 
+  const loginAutoSaveInFlightRef = useRef(false);
   const disableDraftWritesRef = useRef(false);
 
   const clearDraft = () => {
@@ -80,7 +80,7 @@ export default function useDraftManager({
     const offsetMin = new Date().getTimezoneOffset();
     console.log(
       `⏱️ ${label} @ ${formatClock(d)} | iso=${d.toISOString()} | tz=${tz} | offsetMin=${offsetMin}`,
-      extra
+      extra,
     );
   };
 
@@ -167,12 +167,15 @@ export default function useDraftManager({
         raw_seconds: x.raw_seconds,
         active_seconds: x.active_seconds,
         idle_deducted_seconds: x.idle_deducted_seconds,
-      }))
+      })),
     );
     console.log("---------------------------------------");
   };
 
-  // ✅ Save draft to localStorage (always ISO strings)
+  // Requirement #1 & #2:
+  // ONLY call this from:
+  // - finalizeAndPersistOnClose (manual close/off app)
+  // - handleNetworkLoss (internet cut)
   const persistDraft = (forcePending = true, meta = {}) => {
     if (disableDraftWritesRef.current) return;
 
@@ -184,32 +187,47 @@ export default function useDraftManager({
 
         // ACTIVE segments
         segments: (segmentsRef.current || []).map((s) => ({
-          startAt: (s?.startAt instanceof Date ? s.startAt : new Date(s.startAt)).toISOString(),
+          startAt: (s?.startAt instanceof Date
+            ? s.startAt
+            : new Date(s.startAt)
+          ).toISOString(),
           endAt: (s?.endAt instanceof Date ? s.endAt : new Date(s.endAt)).toISOString(),
         })),
         openStartAt: startAtRef.current
-          ? (startAtRef.current instanceof Date
-              ? startAtRef.current.toISOString()
-              : new Date(startAtRef.current).toISOString())
+          ? startAtRef.current instanceof Date
+            ? startAtRef.current.toISOString()
+            : new Date(startAtRef.current).toISOString()
           : null,
 
         // RAW segments
         rawSegments: (rawSegmentsRef?.current || []).map((s) => ({
-          startAt: (s?.startAt instanceof Date ? s.startAt : new Date(s.startAt)).toISOString(),
+          startAt: (s?.startAt instanceof Date
+            ? s.startAt
+            : new Date(s.startAt)
+          ).toISOString(),
           endAt: (s?.endAt instanceof Date ? s.endAt : new Date(s.endAt)).toISOString(),
         })),
         rawOpenStartAt: rawStartAtRef?.current
-          ? (rawStartAtRef.current instanceof Date
-              ? rawStartAtRef.current.toISOString()
-              : new Date(rawStartAtRef.current).toISOString())
+          ? rawStartAtRef.current instanceof Date
+            ? rawStartAtRef.current.toISOString()
+            : new Date(rawStartAtRef.current).toISOString()
           : null,
 
         isCapturing,
         isPaused,
+
+        // IMPORTANT: only drafts saved on close/offline are "pending"
         pendingAutoSubmit: forcePending ? true : false,
+
         savedAt: new Date().toISOString(),
         ...meta,
       };
+
+      console.log("[draft] saved to localStorage", {
+        reason: stateToSave.reason,
+        pending: stateToSave.pendingAutoSubmit,
+        selectedTaskId: stateToSave.selectedTaskId,
+      });
 
       localStorage.setItem(DRAFT_KEY, JSON.stringify(stateToSave));
     } catch (e) {
@@ -217,6 +235,7 @@ export default function useDraftManager({
     }
   };
 
+  // Requirement #1: manual close/off app
   const finalizeAndPersistOnClose = (reason = "close") => {
     if (disableDraftWritesRef.current) return;
 
@@ -241,6 +260,7 @@ export default function useDraftManager({
         rawStartAtRef.current = null;
       }
 
+      // save only if we have something meaningful
       if (selectedTaskId && (segmentsRef.current || []).length > 0) {
         persistDraft(true, { reason });
       }
@@ -249,6 +269,7 @@ export default function useDraftManager({
     }
   };
 
+  // Requirement #2: internet cuts off
   const handleNetworkLoss = (reason = "offline") => {
     try {
       const end = new Date();
@@ -291,164 +312,157 @@ export default function useDraftManager({
     if (!cachedData) return;
 
     try {
+      console.log(
+        "Cached data found from localStorage (saved due to close/offline):",
+        cachedData,
+      );
+
       const parsedData = JSON.parse(cachedData);
 
-      if (parsedData && parsedData.selectedTaskId) {
-        setSelectedTaskId(parsedData.selectedTaskId || "");
-        setSelectedTaskName(parsedData.selectedTaskName || "");
-        setElapsedSeconds(parsedData.elapsedSeconds || 0);
+      // We only care about drafts that were marked pending (close/offline)
+      if (!parsedData?.selectedTaskId || !parsedData?.pendingAutoSubmit) return;
 
-        // ACTIVE restore
-        const restoredSegments = (parsedData.segments || []).map((s) => ({
-          startAt: new Date(s.startAt),
-          endAt: new Date(s.endAt),
-        }));
+      setSelectedTaskId(parsedData.selectedTaskId || "");
+      setSelectedTaskName(parsedData.selectedTaskName || "");
+      setElapsedSeconds(parsedData.elapsedSeconds || 0);
 
-        // RAW restore (fallback to ACTIVE if not present)
-        const restoredRawSegments = (
-          parsedData.rawSegments ||
-          parsedData.segments ||
-          []
-        ).map((s) => ({
-          startAt: new Date(s.startAt),
-          endAt: new Date(s.endAt),
-        }));
+      // ACTIVE restore
+      const restoredSegments = (parsedData.segments || []).map((s) => ({
+        startAt: new Date(s.startAt),
+        endAt: new Date(s.endAt),
+      }));
 
-        // if saved while capturing, close open segment to savedAt
-        if (
-          parsedData.openStartAt &&
-          parsedData.isCapturing &&
-          !parsedData.isPaused &&
-          parsedData.savedAt
-        ) {
-          restoredSegments.push({
-            startAt: new Date(parsedData.openStartAt),
-            endAt: new Date(parsedData.savedAt),
-          });
-        }
+      // RAW restore (fallback to ACTIVE if not present)
+      const restoredRawSegments = (
+        parsedData.rawSegments ||
+        parsedData.segments ||
+        []
+      ).map((s) => ({
+        startAt: new Date(s.startAt),
+        endAt: new Date(s.endAt),
+      }));
 
-        // RAW open segment close
-        if (
-          parsedData.rawOpenStartAt &&
-          parsedData.isCapturing &&
-          !parsedData.isPaused &&
-          parsedData.savedAt
-        ) {
-          restoredRawSegments.push({
-            startAt: new Date(parsedData.rawOpenStartAt),
-            endAt: new Date(parsedData.savedAt),
-          });
-        } else if (
-          // backward compat: if rawOpenStartAt missing but openStartAt exists
-          !parsedData.rawOpenStartAt &&
-          parsedData.openStartAt &&
-          parsedData.isCapturing &&
-          !parsedData.isPaused &&
-          parsedData.savedAt
-        ) {
-          restoredRawSegments.push({
-            startAt: new Date(parsedData.openStartAt),
-            endAt: new Date(parsedData.savedAt),
-          });
-        }
-
-        segmentsRef.current = restoredSegments;
-        if (rawSegmentsRef) rawSegmentsRef.current = restoredRawSegments;
-
-        pendingAutoSubmitRef.current = !!parsedData.pendingAutoSubmit;
-
-        // ✅ snapshot stored (prevents later ref wipe => autosave 0)
-        restoredDraftRef.current = {
-          selectedTaskId: parsedData.selectedTaskId,
-          selectedTaskName: parsedData.selectedTaskName || "",
-          elapsedSeconds: Number(parsedData.elapsedSeconds || 0),
-          savedAt: parsedData.savedAt || null,
-          restoredActiveSegments: restoredSegments,
-          restoredRawSegments: restoredRawSegments,
-        };
-
-        // stop any running UI capture
-        setIsCapturing(false);
-        setIsPaused(false);
-
-        // ✅ logs like ScreenshotApp
-        console.log("✅ DRAFT RESTORED -------------------");
-        console.log("ACTIVE segments:", restoredSegments.length, restoredSegments);
-        console.log("RAW segments:", restoredRawSegments.length, restoredRawSegments);
-        console.log("savedAt:", parsedData.savedAt);
-        console.log("-----------------------------------");
-
-        const preview = buildSegmentBreakdown(restoredRawSegments, restoredSegments);
-        logSegmentBreakdown("DRAFT RESTORED (Segment-wise preview)", preview);
+      // if saved while capturing, close open segment to savedAt
+      if (
+        parsedData.openStartAt &&
+        parsedData.isCapturing &&
+        !parsedData.isPaused &&
+        parsedData.savedAt
+      ) {
+        restoredSegments.push({
+          startAt: new Date(parsedData.openStartAt),
+          endAt: new Date(parsedData.savedAt),
+        });
       }
+
+      // RAW open segment close
+      if (
+        parsedData.rawOpenStartAt &&
+        parsedData.isCapturing &&
+        !parsedData.isPaused &&
+        parsedData.savedAt
+      ) {
+        restoredRawSegments.push({
+          startAt: new Date(parsedData.rawOpenStartAt),
+          endAt: new Date(parsedData.savedAt),
+        });
+      } else if (
+        !parsedData.rawOpenStartAt &&
+        parsedData.openStartAt &&
+        parsedData.isCapturing &&
+        !parsedData.isPaused &&
+        parsedData.savedAt
+      ) {
+        restoredRawSegments.push({
+          startAt: new Date(parsedData.openStartAt),
+          endAt: new Date(parsedData.savedAt),
+        });
+      }
+
+      segmentsRef.current = restoredSegments;
+      if (rawSegmentsRef) rawSegmentsRef.current = restoredRawSegments;
+
+      pendingAutoSubmitRef.current = true;
+
+      restoredDraftRef.current = {
+        selectedTaskId: parsedData.selectedTaskId,
+        selectedTaskName: parsedData.selectedTaskName || "",
+        elapsedSeconds: Number(parsedData.elapsedSeconds || 0),
+        savedAt: parsedData.savedAt || null,
+        restoredActiveSegments: restoredSegments,
+        restoredRawSegments: restoredRawSegments,
+      };
+
+      // stop any running UI capture
+      setIsCapturing(false);
+      setIsPaused(false);
+
+      const preview = buildSegmentBreakdown(restoredRawSegments, restoredSegments);
+      logSegmentBreakdown("DRAFT RESTORED (Segment-wise preview)", preview);
     } catch (e) {
       console.error("Failed to parse cachedData:", e);
     }
-    
   }, []);
 
-  // Auto-save while capturing
-  useEffect(() => {
-    if (autoSaveRef.current) {
-      clearInterval(autoSaveRef.current);
-      autoSaveRef.current = null;
-    }
-
-    if (isCapturing) {
-      autoSaveRef.current = setInterval(() => {
-        if (!selectedTaskId) return;
-        persistDraft(true, { reason: "autosave" });
-      }, 10000);
-    }
-
-    return () => {
-      if (autoSaveRef.current) {
-        clearInterval(autoSaveRef.current);
-        autoSaveRef.current = null;
-      }
-    };
-    
-  }, [isCapturing, selectedTaskId, selectedTaskName]);
-
-  // beforeunload + visibilitychange
+  // Requirement #1: ONLY manual close/off app triggers saving (no visibilitychange)
   useEffect(() => {
     const onBeforeUnload = () => finalizeAndPersistOnClose("beforeunload");
 
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden")
-        finalizeAndPersistOnClose("hidden");
-    };
+    // pagehide is more reliable in some browsers; still a close/navigation event
+    const onPageHide = () => finalizeAndPersistOnClose("pagehide");
 
     window.addEventListener("beforeunload", onBeforeUnload);
-    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", onPageHide);
 
     return () => {
       window.removeEventListener("beforeunload", onBeforeUnload);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", onPageHide);
     };
-    
   }, [selectedTaskId]);
 
-  // Offline event
+  // Requirement #2: internet cuts off
   useEffect(() => {
     const onOffline = () => handleNetworkLoss("offline_event");
+    const onOnline = () => {
+      lastOnlineRef.current = true;
+      offlineStreakRef.current = 0;
+    };
+
     window.addEventListener("offline", onOffline);
-    return () => window.removeEventListener("offline", onOffline);
-    
+    window.addEventListener("online", onOnline);
+
+    return () => {
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+    };
   }, [selectedTaskId]);
 
-  // Offline polling
+  // Offline polling (kept) with a small debounce to reduce false triggers:
+  // only treat offline if navigator.onLine is false for 2 consecutive polls
   useEffect(() => {
     if (networkPollRef.current) clearInterval(networkPollRef.current);
 
     networkPollRef.current = setInterval(() => {
       const nowOnline =
         typeof navigator !== "undefined" ? navigator.onLine : true;
-      if (lastOnlineRef.current && !nowOnline) {
-        lastOnlineRef.current = nowOnline;
-        handleNetworkLoss("poll_offline");
+
+      if (!nowOnline) {
+        offlineStreakRef.current += 1;
       } else {
-        lastOnlineRef.current = nowOnline;
+        offlineStreakRef.current = 0;
+      }
+
+      // transition online -> offline (debounced)
+      if (lastOnlineRef.current && offlineStreakRef.current >= 2) {
+        lastOnlineRef.current = false;
+        handleNetworkLoss("poll_offline");
+        return;
+      }
+
+      // transition offline -> online
+      if (!lastOnlineRef.current && nowOnline) {
+        lastOnlineRef.current = true;
+        offlineStreakRef.current = 0;
       }
     }, 3000);
 
@@ -456,106 +470,78 @@ export default function useDraftManager({
       clearInterval(networkPollRef.current);
       networkPollRef.current = null;
     };
-    
   }, [selectedTaskId]);
 
-  // Login auto-save once tasks load
+  // Requirement #3 & #4:
+  // After coming back, send to DB reliably
+  // Only clear localStorage AFTER confirmed success
   useEffect(() => {
     const runLoginAutoSave = async () => {
       if (autoSavedDraftOnceRef.current) return;
       if (loginAutoSaveInFlightRef.current) return;
       if (!taskData || taskData.length === 0) return;
 
+      // must have a pending recovery draft
+      if (!pendingAutoSubmitRef.current) return;
+
       const draft = restoredDraftRef.current;
       if (!draft?.selectedTaskId) return;
 
       loginAutoSaveInFlightRef.current = true;
-      autoSavedDraftOnceRef.current = true;
-
-      const serverTask = taskData.find(
-        (tt) => String(getTaskId(tt)) === String(draft.selectedTaskId)
-      );
-
-if (!serverTask) {
-  console.warn(
-    "Draft task is not available for this user anymore. Clearing draft:",
-    draft.selectedTaskId
-  );
-
-  // stop the loop permanently
-  autoSavedDraftOnceRef.current = true;
-  loginAutoSaveInFlightRef.current = false;
-  pendingAutoSubmitRef.current = false;
-
-  // clear local + in-memory draft
-  clearDraft();
-
-  // reset UI selection
-  setSelectedTaskId("");
-  setSelectedTaskName("");
-  setElapsedSeconds(0);
-  setSelectedProjectId("");
-
-  return;
-}
-
-
-      const draftSeconds = Number(draft.elapsedSeconds || 0);
-      const serverSeconds = toSeconds(serverTask?.last_timing);
-
-      const totalSeconds = Math.max(
-        0,
-        Math.floor(Math.max(draftSeconds, serverSeconds))
-      );
-
-      if (draft.selectedTaskName && !selectedTaskName) {
-        setSelectedTaskName(draft.selectedTaskName);
-      } else if (serverTask?.task_name && !selectedTaskName) {
-        setSelectedTaskName(serverTask.task_name);
-      }
-
-      if (totalSeconds !== elapsedSecondsRef.current) setElapsedSeconds(totalSeconds);
 
       try {
+        const serverTask = taskData.find(
+          (tt) => String(getTaskId(tt)) === String(draft.selectedTaskId),
+        );
+
+        if (!serverTask) {
+          console.warn(
+            "Draft task not available anymore. Clearing draft:",
+            draft.selectedTaskId,
+          );
+
+          // permanently clear, no retry possible
+          autoSavedDraftOnceRef.current = true;
+          loginAutoSaveInFlightRef.current = false;
+          pendingAutoSubmitRef.current = false;
+
+          clearDraft();
+          setSelectedTaskId("");
+          setSelectedTaskName("");
+          setElapsedSeconds(0);
+          setSelectedProjectId("");
+          return;
+        }
+
+        const draftSeconds = Number(draft.elapsedSeconds || 0);
+        const serverSeconds = toSeconds(serverTask?.last_timing);
+
+        const totalSeconds = Math.max(
+          0,
+          Math.floor(Math.max(draftSeconds, serverSeconds)),
+        );
+
+        if (draft.selectedTaskName && !selectedTaskName) {
+          setSelectedTaskName(draft.selectedTaskName);
+        } else if (serverTask?.task_name && !selectedTaskName) {
+          setSelectedTaskName(serverTask.task_name);
+        }
+
+        if (totalSeconds !== elapsedSecondsRef.current) {
+          setElapsedSeconds(totalSeconds);
+        }
+
         const developerId = Number(localStorage.getItem("user_id") || 0) || null;
         const tenantId = Number(localStorage.getItem("tenant_id") || 0) || null;
 
-        // update task timing (only if needed)
-        if (serverSeconds < totalSeconds) {
-          const updateRes = await fetch(
-            `${API_BASE}/api/tasks/task-update/${draft.selectedTaskId}`,
-            {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              credentials: "include",
-              body: JSON.stringify({
-                taskId: String(draft.selectedTaskId),
-                last_timing: totalSeconds,
-              }),
-            }
-          );
-
-          if (!updateRes.ok) {
-            const upd = await updateRes.json().catch(() => ({}));
-            console.warn("Login auto-save task-update failed:", upd);
-          }
-        }
-
-        // ✅ ALWAYS use snapshot (avoids refs cleared => 0)
+        // build payload from restored snapshot
         const activeSegs =
-          draft.restoredActiveSegments && draft.restoredActiveSegments.length > 0
-            ? draft.restoredActiveSegments
-            : segmentsRef.current || [];
-
+          draft.restoredActiveSegments?.length ? draft.restoredActiveSegments : [];
         const rawSegs =
-          draft.restoredRawSegments && draft.restoredRawSegments.length > 0
-            ? draft.restoredRawSegments
-            : rawSegmentsRef?.current?.length
-            ? rawSegmentsRef.current
-            : activeSegs;
+          draft.restoredRawSegments?.length ? draft.restoredRawSegments : activeSegs;
 
         const breakdown = buildSegmentBreakdown(rawSegs, activeSegs);
-        logSegmentBreakdown("AUTO-SAVE FINAL (Recovered draft - Segment-wise)", breakdown);
+        logSegmentBreakdown("RECOVERY (Segment-wise)", breakdown);
 
         const segmentsToSend = (breakdown.perSegment || [])
           .filter((x) => x.task_start && x.task_end)
@@ -565,11 +551,9 @@ if (!serverTask) {
             developer_id: developerId,
             work_date: formatDateYMD(x.raw_task_start || x.task_start),
 
-            // ✅ ACTIVE start/end so server duration = active time
             task_start: toIsoNoMs(x.task_start),
             task_end: toIsoNoMs(x.task_end),
 
-            // ✅ RAW actual window for your analysis/storage
             raw_task_start: toIsoNoMs(x.raw_task_start || x.task_start),
             raw_task_end: toIsoNoMs(x.raw_task_end || x.task_end),
 
@@ -583,11 +567,38 @@ if (!serverTask) {
             user_offset_minutes: getUserOffsetMinutes(),
           }));
 
+        // 1) update task timing if needed (must succeed if attempted)
+        if (serverSeconds < totalSeconds) {
+          const updateRes = await fetch(
+            `${API_BASE}/api/tasks/task-update/${draft.selectedTaskId}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({
+                taskId: String(draft.selectedTaskId),
+                last_timing: totalSeconds,
+              }),
+            },
+          );
+
+          if (!updateRes.ok) {
+            const upd = await updateRes.json().catch(() => ({}));
+            console.warn("Recovery task-update failed. Keeping draft for retry.", upd);
+
+            // allow retry later
+            loginAutoSaveInFlightRef.current = false;
+            autoSavedDraftOnceRef.current = false;
+            return;
+          }
+        }
+
+        // 2) post time-tracking segments (must succeed to clear localStorage)
         if (segmentsToSend.length > 0) {
           const bodyToSend =
             segmentsToSend.length === 1 ? segmentsToSend[0] : segmentsToSend;
 
-          logClockAt("AUTO-SAVE /time-tracking POST", new Date(), {
+          logClockAt("RECOVERY /time-tracking POST", new Date(), {
             selectedTaskId: draft.selectedTaskId,
             segments: segmentsToSend.length,
           });
@@ -599,43 +610,51 @@ if (!serverTask) {
             body: JSON.stringify(bodyToSend),
           });
 
-          const ttData = await timeTrackingRes.json().catch(() => ({}));
           if (!timeTrackingRes.ok) {
-            console.warn("Time-tracking sync failed:", ttData);
+            const ttData = await timeTrackingRes.json().catch(() => ({}));
+            console.warn("Recovery time-tracking failed. Keeping draft for retry.", ttData);
+
+            // allow retry later
+            loginAutoSaveInFlightRef.current = false;
+            autoSavedDraftOnceRef.current = false;
+            return;
           }
+        } else {
+          console.warn("Recovery has no segmentsToSend. Keeping draft (safety).");
+
+          // keep draft because clearing would risk data loss
+          loginAutoSaveInFlightRef.current = false;
+          autoSavedDraftOnceRef.current = false;
+          return;
         }
 
-        // flagger back to 0
+        // 3) optional flagger
         try {
           await updateTaskFlagger(draft.selectedTaskId, 0);
         } catch (e) {
-          console.warn("updateTaskFlagger failed:", e);
+          console.warn("updateTaskFlagger failed (non-blocking):", e);
         }
+
+        // SUCCESS: now we can clear localStorage
+        autoSavedDraftOnceRef.current = true;
+        pendingAutoSubmitRef.current = false;
+        disableDraftWritesRef.current = true;
 
         if (!shownAutoSavedToastRef.current) {
           shownAutoSavedToastRef.current = true;
           showToast(
             t("toast.recoveredDraft", {
-              defaultValue:
-                "✅ Previous session time was saved automatically. Reloading…",
-            })
+              defaultValue: "✅ Previous session time was saved automatically.",
+            }),
           );
         }
 
-        disableDraftWritesRef.current = true;
-
-        if (autoSaveRef.current) {
-          clearInterval(autoSaveRef.current);
-          autoSaveRef.current = null;
-        }
-
+        // reset in-memory state
         startAtRef.current = null;
         if (rawStartAtRef) rawStartAtRef.current = null;
 
         segmentsRef.current = [];
         if (rawSegmentsRef) rawSegmentsRef.current = [];
-
-        pendingAutoSubmitRef.current = false;
 
         setSelectedTaskId("");
         setSelectedTaskName("");
@@ -644,17 +663,18 @@ if (!serverTask) {
 
         clearDraft();
 
-        // your previous behavior (kept)
-        setTimeout(() => window.location.reload(), 600000);
+        loginAutoSaveInFlightRef.current = false;
+        setTimeout(() => window.location.reload(), 800);
       } catch (e) {
-        console.error("Login auto-save error:", e);
+        console.error("Recovery error (keeping draft for retry):", e);
+
+        // keep draft; allow retry
         loginAutoSaveInFlightRef.current = false;
         autoSavedDraftOnceRef.current = false;
       }
     };
 
     runLoginAutoSave();
-
   }, [taskData, selectedTaskName, API_BASE, t]);
 
   return {

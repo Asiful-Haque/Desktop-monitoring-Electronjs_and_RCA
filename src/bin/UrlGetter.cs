@@ -12,24 +12,37 @@ class UrlGetter {
         while (true) {
             try {
                 IntPtr handle = GetForegroundWindow();
-                AutomationElement element = AutomationElement.FromHandle(handle);
+                if (handle == IntPtr.Zero) continue;
 
-                // Look for the 'Edit' control (the URL bar)
-                Condition cond = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit);
+                AutomationElement element = AutomationElement.FromHandle(handle);
+                
+                // Speed optimization: Look specifically for the URL bar by name/type
+                // Chrome/Edge/Brave address bars are 'Edit' types with specific names
+                Condition cond = new AndCondition(
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit),
+                    new OrCondition(
+                        new PropertyCondition(AutomationElement.NameProperty, "Address and search bar"),
+                        new PropertyCondition(AutomationElement.NameProperty, "Search or enter website name")
+                    )
+                );
+
                 AutomationElement urlBar = element.FindFirst(TreeScope.Descendants, cond);
 
                 if (urlBar != null) {
-                    // Extract the text value from the address bar
                     ValuePattern vp = urlBar.GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
                     string currentUrl = vp.Current.Value;
 
-                    if (currentUrl != lastUrl) {
-                        Console.WriteLine(currentUrl); // This sends data to Node.js
+                    if (!string.IsNullOrEmpty(currentUrl) && currentUrl != lastUrl) {
+                        Console.WriteLine(currentUrl);
                         lastUrl = currentUrl;
                     }
                 }
-            } catch { /* Ignore windows that don't have URL bars */ }
-            Thread.Sleep(1000); // Check every second
+            } catch { 
+                // Catching errors is good, prevents the engine from crashing on non-browser windows
+            }
+            
+            // 1500ms is the "sweet spot" for performance vs accuracy
+            Thread.Sleep(1500); 
         }
     }
 }

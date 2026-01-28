@@ -21,7 +21,7 @@ export default function WorkContextCard({
         <h2 className="card-title">
           {t("dashboard.workContext.title", { defaultValue: "Work Context" })}
         </h2>
-        <span className="card-tag">
+        <span className="card-tag card-tag-live">
           {t("dashboard.workContext.tag", { defaultValue: "Live" })}
         </span>
       </div>

@@ -33,9 +33,9 @@ const ScreenshotApp = () => {
   const videoRef = useRef([]);
   const previewRef = useRef(null);
   const streamsRef = useRef([]);
-const [activityLog, setActivityLog] = useState([]);
-const [browserHistory, setBrowserHistory] = useState([]);
-// const [siteTimeLogs, setSiteTimeLogs] = useState([]);
+  const [activityLog, setActivityLog] = useState([]);
+  const [browserHistory, setBrowserHistory] = useState([]);
+  // const [siteTimeLogs, setSiteTimeLogs] = useState([]);
   // ✅ NEW: profiles + selected profile
   const [chromeProfiles, setChromeProfiles] = useState([]);
   const [selectedChromeProfile, setSelectedChromeProfile] = useState("Default");
@@ -66,8 +66,8 @@ const [browserHistory, setBrowserHistory] = useState([]);
         const initialProfile = list.includes("Default")
           ? "Default"
           : list.length > 0
-          ? list[0]
-          : "Default";
+            ? list[0]
+            : "Default";
 
         setSelectedChromeProfile(initialProfile);
 
@@ -106,11 +106,11 @@ const [browserHistory, setBrowserHistory] = useState([]);
       }
     });
     // ✅ NEW: fetch real time spent per website
-// window.electronAPI.getActiveTimeLogs().then((logs) => {
-//   console.log("✅ Received active time logs from Electron:", logs);
-//   if (!alive) return;
-//   setSiteTimeLogs(Array.isArray(logs) ? logs : []);
-// });
+    // window.electronAPI.getActiveTimeLogs().then((logs) => {
+    //   console.log("✅ Received active time logs from Electron:", logs);
+    //   if (!alive) return;
+    //   setSiteTimeLogs(Array.isArray(logs) ? logs : []);
+    // });
 
     return () => {
       alive = false;
@@ -231,7 +231,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
   const formatDateYMD = (d) => {
     const dt = d instanceof Date ? d : new Date(d);
     return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(
-      dt.getDate()
+      dt.getDate(),
     )}`;
   };
 
@@ -256,9 +256,9 @@ const [browserHistory, setBrowserHistory] = useState([]);
     const d = atDate instanceof Date ? atDate : new Date();
     console.log(
       `⏱️ ${label} @ ${formatClock(
-        d
+        d,
       )} | iso=${d.toISOString()} | tz=${getUserTz()} | offsetMin=${getUserOffsetMinutes()}`,
-      extra
+      extra,
     );
   };
 
@@ -310,7 +310,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
 
   const idleSessionSeconds = Math.max(
     0,
-    rawSessionSeconds - activeSessionSeconds
+    rawSessionSeconds - activeSessionSeconds,
   );
 
   const buildSegmentBreakdown = (rawSegs = [], activeSegs = []) => {
@@ -374,7 +374,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
         raw_seconds: x.raw_seconds,
         active_seconds: x.active_seconds,
         idle_deducted_seconds: x.idle_deducted_seconds,
-      }))
+      })),
     );
     console.log("---------------------------------------");
   };
@@ -390,7 +390,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
     // ✅ adjust ACTIVE start only (RAW stays intact)
     if (startAtRef.current) {
       const candidate = new Date(
-        startAtRef.current.getTime() + deductionSeconds * 1000
+        startAtRef.current.getTime() + deductionSeconds * 1000,
       );
       // never allow startAt > now
       startAtRef.current = candidate > now ? now : candidate;
@@ -400,7 +400,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
     if (elapsedSecondsRef.current) {
       elapsedSecondsRef.current = Math.max(
         0,
-        elapsedSecondsRef.current - deductionSeconds
+        elapsedSecondsRef.current - deductionSeconds,
       );
     }
 
@@ -463,7 +463,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
         }).catch(() => {});
       } catch {}
     },
-    [API_BASE, user_id]
+    [API_BASE, user_id],
   );
 
   // ✅ NEW: refresh/close handler
@@ -491,7 +491,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
     const width = videoElements[0].videoWidth + videoElements[1].videoWidth;
     const height = Math.max(
       videoElements[0].videoHeight,
-      videoElements[1].videoHeight
+      videoElements[1].videoHeight,
     );
 
     canvas.width = width;
@@ -502,18 +502,18 @@ const [browserHistory, setBrowserHistory] = useState([]);
       0,
       0,
       videoElements[0].videoWidth,
-      videoElements[0].videoHeight
+      videoElements[0].videoHeight,
     );
     ctx.drawImage(
       videoElements[1],
       videoElements[0].videoWidth,
       0,
       videoElements[1].videoWidth,
-      videoElements[1].videoHeight
+      videoElements[1].videoHeight,
     );
 
     const blob = await new Promise((resolve) =>
-      canvas.toBlob(resolve, "image/png")
+      canvas.toBlob(resolve, "image/png"),
     );
     if (!blob) return;
 
@@ -571,7 +571,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
   const filteredTasks = useMemo(() => {
     if (!selectedProjectId) return taskData;
     return taskData.filter(
-      (tt) => String(tt.project_id) === String(selectedProjectId)
+      (tt) => String(tt.project_id) === String(selectedProjectId),
     );
   }, [taskData, selectedProjectId]);
 
@@ -583,7 +583,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
     if (
       selectedTaskId &&
       !filteredTasks.some(
-        (tt) => String(getTaskId(tt)) === String(selectedTaskId)
+        (tt) => String(getTaskId(tt)) === String(selectedTaskId),
       )
     ) {
       // ✅ NEW: clear flagger when selection becomes invalid
@@ -611,7 +611,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
       showToast(
         t("toast.approvalBlock", {
           defaultValue: "Let Admin approve previous Payments before",
-        })
+        }),
       );
       return;
     }
@@ -655,7 +655,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
       showToast(
         t("toast.approvalBlock", {
           defaultValue: "Let Admin approve previous Payments before",
-        })
+        }),
       );
       return;
     }
@@ -678,7 +678,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
         showToast(
           t("toast.approvalBlock", {
             defaultValue: "Let Admin approve previous Payments before",
-          })
+          }),
         );
         return;
       }
@@ -688,13 +688,13 @@ const [browserHistory, setBrowserHistory] = useState([]);
       showToast(
         t("toast.selectTaskFirst", {
           defaultValue: "⚠ Please select a task before starting!",
-        })
+        }),
       );
       return;
     }
 
     if (window.electronAPI && window.electronAPI.startTracking) {
-        window.electronAPI.startTracking();
+      window.electronAPI.startTracking();
     }
 
     // set RAW + ACTIVE start at click-time
@@ -723,7 +723,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
       showToast(
         t("toast.approvalBlock", {
           defaultValue: "Let Admin approve previous Payments before",
-        })
+        }),
       );
       return;
     }
@@ -769,7 +769,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
         showToast(
           t("toast.approvalBlock", {
             defaultValue: "Let Admin approve previous Payments before",
-          })
+          }),
         );
         return;
       }
@@ -982,6 +982,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
   //   }
   // };
   const handleFinish = async (opts = {}) => {
+    console.log("handleFinish called with opts:");
     const silentAutoSubmit = !!opts.silentAutoSubmit;
     const submitClickedAt = new Date();
 
@@ -1005,7 +1006,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
     setSessionWindowEnd(submitClickedAt);
 
     if (window.electronAPI && window.electronAPI.stopTracking) {
-        await window.electronAPI.stopTracking();
+      await window.electronAPI.stopTracking();
     }
 
     logClockAt("SUBMIT clicked", submitClickedAt, {
@@ -1021,7 +1022,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
         showToast(
           t("toast.noTimeCaptured", {
             defaultValue: "No time captured. Please Start first.",
-          })
+          }),
         );
       }
       return;
@@ -1034,14 +1035,14 @@ const [browserHistory, setBrowserHistory] = useState([]);
     shots.stopScreenshotCycle();
 
     const theTask = taskData.find(
-      (tt) => String(getTaskId(tt)) === String(selectedTaskId)
+      (tt) => String(getTaskId(tt)) === String(selectedTaskId),
     );
 
     if (!theTask) {
       draft.persistDraft(true, { reason: "task_not_found" });
       if (!silentAutoSubmit) {
         showToast(
-          t("toast.taskNotFound", { defaultValue: "Selected task not found." })
+          t("toast.taskNotFound", { defaultValue: "Selected task not found." }),
         );
       }
       return;
@@ -1056,7 +1057,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
     // ✅ breakdown + FINAL segment-wise console table
     const breakdown = buildSegmentBreakdown(
       rawSegmentsRef.current || [],
-      segmentsRef.current || []
+      segmentsRef.current || [],
     );
     logSegmentBreakdown("FINAL (Segment-wise)", breakdown);
 
@@ -1109,7 +1110,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
             ttData?.error ||
               t("toast.submitFailed", {
                 defaultValue: "Failed to submit time tracking.",
-              })
+              }),
           );
           setShowFinishConfirm(true);
         }
@@ -1123,26 +1124,60 @@ const [browserHistory, setBrowserHistory] = useState([]);
         Math.floor(
           Math.max(
             elapsedSecondsRef.current,
-            baseSeconds + breakdown.active_session_seconds
-          )
-        )
+            baseSeconds + breakdown.active_session_seconds,
+          ),
+        ),
       );
 
-      await fetch(`${API_BASE}/api/tasks/task-update/${selectedTaskId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          taskId: selectedTaskId,
-          last_timing: totalSeconds,
-        }),
-      }).catch(() => {});
+      const updateRes = await fetch(
+        `${API_BASE}/api/tasks/task-update/${selectedTaskId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            taskId: selectedTaskId,
+            last_timing: totalSeconds,
+          }),
+        },
+      );
+
+      // ---------------------------------------------------------
+      // ✅ JIRA SYNC LOGIC
+      // ---------------------------------------------------------
+      const hasJiraLink = theTask.jira_key || theTask.external_jira_id;
+      console.log(
+        `Jira Link Present: ${hasJiraLink} (Jira Key: ${theTask.jira_key}, External Jira ID: ${theTask.external_jira_id})`,
+      );
+
+      console.log("Update response is ", updateRes.ok);
+      if (updateRes.ok && hasJiraLink) {
+        console.log(
+          `🚀 Jira Link detected (${theTask.jira_key}). Syncing worklog...`,
+        );
+        try {
+          await fetch(`${API_BASE}/api/jira/sync-worklog`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              tenant_id: tenant_id_local,
+              issueKey: theTask.external_jira_id || theTask.jira_key,
+              seconds: totalSeconds,
+              comment: `Worklog synced from TrackLively. Task: ${theTask.task_name}`,
+            }),
+          });
+          console.log("✅ Jira Worklog synced successfully.");
+        } catch (err) {
+          console.error("❌ Jira Sync failed:", err);
+        }
+      }
 
       await updateTaskFlagger(selectedTaskId, 0);
 
       if (!silentAutoSubmit) {
         showToast(
-          t("toast.timeSaved", { defaultValue: "Time tracking saved!" })
+          t("toast.timeSaved", { defaultValue: "Time tracking saved!" }),
         );
       }
       const currentDate = formatDateYMD(new Date());
@@ -1154,13 +1189,13 @@ const [browserHistory, setBrowserHistory] = useState([]);
           method: "GET",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-        }
+        },
       );
 
       const existingData = await existingAttendance.json();
       console.log(
         "Existing Attendance Data:-------------------------------------",
-        existingData
+        existingData,
       );
 
       if (existingData?.rows?.length !== 0) {
@@ -1188,7 +1223,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
               attendanceData?.error ||
                 t("toast.submitAttendanceFailed", {
                   defaultValue: "Failed to submit attendance.",
-                })
+                }),
             );
             setShowFinishConfirm(true);
           }
@@ -1211,12 +1246,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
     } catch (err) {
       draft.persistDraft(true, { reason: "submit_network_error" });
       if (!silentAutoSubmit) {
-        showToast(
-          t("toast.submitNetworkError", {
-            defaultValue:
-              "Network error submitting time tracking and attendance.",
-          })
-        );
+        showToast(t("There may be an issue in Developer's end."));
       }
     } finally {
       setSelectedTaskId("");
@@ -1229,6 +1259,13 @@ const [browserHistory, setBrowserHistory] = useState([]);
       setSelectedProjectId("");
       setSessionWindowStart(null);
       setSessionWindowEnd(null);
+
+      // if (!silentAutoSubmit) {
+      //     console.log("🔄 Finalizing task and reloading app...");
+      //     setTimeout(() => {
+      //         window.location.reload();
+      //     }, 1500);
+      // }
     }
   };
 
@@ -1301,7 +1338,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
       },
       { key: "settings", labelKey: "sidebar.settings" },
     ],
-    []
+    [],
   );
 
   console.log("Browser History State:", browserHistory);
@@ -1393,7 +1430,7 @@ const [browserHistory, setBrowserHistory] = useState([]);
           title={t("idle.title", { defaultValue: "You are idle" })}
           subtitle={t("idle.subtitle", {
             defaultValue: `You have been idle for ${formatTime(
-              idle.idleWarningSeconds
+              idle.idleWarningSeconds,
             )}.`,
           })}
           cancelText={t("confirm.I was in a break", {
@@ -1425,12 +1462,12 @@ const [browserHistory, setBrowserHistory] = useState([]);
                         defaultValue: "Recording",
                       })
                     : isPaused
-                    ? t("dashboard.summary.status.paused", {
-                        defaultValue: "Paused",
-                      })
-                    : t("dashboard.summary.status.idle", {
-                        defaultValue: "Idle",
-                      })}
+                      ? t("dashboard.summary.status.paused", {
+                          defaultValue: "Paused",
+                        })
+                      : t("dashboard.summary.status.idle", {
+                          defaultValue: "Idle",
+                        })}
                 </span>
                 <span className="summary-sub">
                   {t("dashboard.summary.status.sub", {
@@ -1463,8 +1500,8 @@ const [browserHistory, setBrowserHistory] = useState([]);
                   {sessionWindowEnd
                     ? formatClock(sessionWindowEnd)
                     : isCapturing
-                    ? formatClock(new Date(uiNowMs))
-                    : "--"}
+                      ? formatClock(new Date(uiNowMs))
+                      : "--"}
                 </span>
                 <span className="summary-sub">
                   Active: {formatTime(activeSessionSeconds)} | Idle deducted:{" "}
@@ -1558,24 +1595,22 @@ const [browserHistory, setBrowserHistory] = useState([]);
             </select>
           </div>
 
-<h2>Today’s Browser Usage</h2>
+          <h2>Today’s Browser Usage</h2>
 
-{browserHistory.length === 0 ? (
-  <p style={{ opacity: 0.7 }}>No usage today</p>
-) : (
-  <ul>
-    {browserHistory.map((item, i) => (
-      <li key={i} style={{ marginBottom: 8 }}>
-        <strong>{item.hostname}</strong>
-        <span style={{ marginLeft: 8, opacity: 0.7 }}>
-          — {item.visitTime}
-        </span>
-      </li>
-    ))}
-  </ul>
-)}
-
-
+          {browserHistory.length === 0 ? (
+            <p style={{ opacity: 0.7 }}>No usage today</p>
+          ) : (
+            <ul>
+              {browserHistory.map((item, i) => (
+                <li key={i} style={{ marginBottom: 8 }}>
+                  <strong>{item.hostname}</strong>
+                  <span style={{ marginLeft: 8, opacity: 0.7 }}>
+                    — {item.visitTime}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </main>
     </div>

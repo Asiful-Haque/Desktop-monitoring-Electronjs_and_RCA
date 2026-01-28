@@ -882,3 +882,29 @@ body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+
+.card-tag-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+
+  color: #a7f3d0;                 /* light neon green text */
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(52, 211, 153, 0.45);
+
+  box-shadow:
+    0 0 14px rgba(16, 185, 129, 0.55),
+    inset 0 0 10px rgba(16, 185, 129, 0.18);
+}
+
+.card-tag-live::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.9);
+}
